@@ -12,21 +12,32 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-let app: FirebaseApp;
-let db: Firestore;
-let auth: Auth;
-let storage: FirebaseStorage;
+// Check if Firebase is properly configured
+const isFirebaseConfigured = 
+  firebaseConfig.apiKey && 
+  firebaseConfig.apiKey !== 'placeholder_api_key' &&
+  firebaseConfig.projectId &&
+  firebaseConfig.projectId !== 'placeholder_project_id';
 
-if (typeof window !== 'undefined') {
-  if (!getApps().length) {
-    app = initializeApp(firebaseConfig);
-  } else {
-    app = getApps()[0];
+// Initialize Firebase only if configured and in browser
+let app: FirebaseApp | undefined;
+let db: Firestore | undefined;
+let auth: Auth | undefined;
+let storage: FirebaseStorage | undefined;
+
+if (typeof window !== 'undefined' && isFirebaseConfigured) {
+  try {
+    if (!getApps().length) {
+      app = initializeApp(firebaseConfig);
+    } else {
+      app = getApps()[0];
+    }
+    db = getFirestore(app);
+    auth = getAuth(app);
+    storage = getStorage(app);
+  } catch (error) {
+    console.warn('Firebase initialization failed. Using placeholder mode:', error);
   }
-  db = getFirestore(app);
-  auth = getAuth(app);
-  storage = getStorage(app);
 }
 
-export { app, db, auth, storage };
+export { app, db, auth, storage, isFirebaseConfigured };

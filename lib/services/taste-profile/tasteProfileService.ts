@@ -1,4 +1,4 @@
-import { db } from '@/lib/firebase/config';
+import { db, isFirebaseConfigured } from '@/lib/firebase/config';
 import { 
   collection, 
   doc, 
@@ -18,6 +18,27 @@ const RATINGS_COLLECTION = 'ratings';
  * Get or create a taste profile for a user
  */
 export async function getTasteProfile(userId: string): Promise<TasteProfile | null> {
+  if (!isFirebaseConfigured || !db) {
+    console.warn('Firebase not configured. Returning default profile.');
+    return {
+      userId,
+      preferences: {
+        quietness: 50,
+        serviceQuality: 50,
+        healthiness: 50,
+        value: 50,
+        atmosphere: 50,
+        cuisineTypes: [],
+        priceRange: { min: 10, max: 100 },
+      },
+      learningData: {
+        totalRatings: 0,
+        averageRating: 0,
+        lastUpdated: new Date(),
+      },
+    };
+  }
+  
   try {
     const profileRef = doc(db, TASTE_PROFILES_COLLECTION, userId);
     const profileSnap = await getDoc(profileRef);
@@ -60,6 +81,11 @@ export async function updateTasteProfileFromRating(
   userId: string, 
   rating: Rating
 ): Promise<void> {
+  if (!isFirebaseConfigured || !db) {
+    console.warn('Firebase not configured. Cannot update taste profile.');
+    return;
+  }
+  
   try {
     const profile = await getTasteProfile(userId);
     if (!profile) return;
@@ -132,6 +158,10 @@ export async function calculateOverlapScore(
   userId1: string, 
   userId2: string
 ): Promise<number> {
+  if (!isFirebaseConfigured || !db) {
+    return 0;
+  }
+  
   try {
     const [profile1, profile2] = await Promise.all([
       getTasteProfile(userId1),

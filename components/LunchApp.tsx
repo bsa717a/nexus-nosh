@@ -120,7 +120,7 @@ export default function LunchApp() {
                       <Radar name="You" dataKey="score" stroke="#fb923c" fill="#fb923c" fillOpacity={0.3} />
                     )}
                     {(compare === 'friends' || compare === 'both') && (
-                      <Radar name="Friends" dataKey="score" stroke="#2563eb" fill="#2563eb" fillOpacity={0.2} data={FRIENDS} />
+                      <Radar name="Friends" dataKey="friendsScore" stroke="#2563eb" fill="#2563eb" fillOpacity={0.2} />
                     )}
                   </RadarChart>
                 </ResponsiveContainer>

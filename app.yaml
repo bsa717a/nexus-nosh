@@ -2,6 +2,13 @@ runtime: nodejs20
 
 env_variables:
   NODE_ENV: production
+  NEXT_PUBLIC_FIREBASE_API_KEY: "AIzaSyBwDU2LlhEXIzB5iw4zhq_uepf2K4skPSc"
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "nexus-nosh.firebaseapp.com"
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: "nexus-nosh"
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "nexus-nosh.firebasestorage.app"
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "251223233015"
+  NEXT_PUBLIC_FIREBASE_APP_ID: "1:251223233015:web:26460b83dd6a21f5ce1ef2"
+  # NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN: "your_mapbox_token" # Optional - add if you want map features
 
 handlers:
   - url: /.*

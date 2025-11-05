@@ -1,4 +1,4 @@
-import { db } from '@/lib/firebase/config';
+import { db, isFirebaseConfigured } from '@/lib/firebase/config';
 import { 
   collection, 
   getDocs, 
@@ -30,6 +30,11 @@ export async function getPersonalizedRecommendations(
   meetingType?: MeetingType,
   limitCount: number = 20
 ): Promise<RestaurantRecommendation[]> {
+  if (!isFirebaseConfigured || !db) {
+    console.warn('Firebase not configured. Returning empty recommendations.');
+    return [];
+  }
+  
   try {
     const profile = await getTasteProfile(userId);
     if (!profile) return [];

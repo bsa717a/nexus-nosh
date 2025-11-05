@@ -3,5 +3,10 @@
 @tailwind utilities;
 
 /* App background */
-html, body, #__next { height: 100%; }
-body { @apply bg-orange-50; }
+html, body, #__next { 
+  height: 100%; 
+}
+
+body { 
+  @apply bg-gradient-to-b from-orange-50 to-white;
+}

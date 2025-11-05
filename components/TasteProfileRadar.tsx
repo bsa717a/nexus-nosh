@@ -62,3 +62,4 @@ export default function TasteProfileRadar({ profile, compareProfile }: TasteProf
     </div>
   );
 }
+

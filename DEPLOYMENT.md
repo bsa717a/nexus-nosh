@@ -188,3 +188,4 @@ gcloud app browse
 - App Engine has a free tier
 - Firestore free tier: 50K reads, 20K writes per day
 - Monitor usage in Google Cloud Console
+

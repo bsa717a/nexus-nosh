@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Nexus Nosh Deployment Script
+# Usage: ./scripts/deploy.sh
+
+set -e  # Exit on error
+
+echo "🚀 Starting Nexus Nosh Deployment..."
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Check if gcloud is installed
+if ! command -v gcloud &> /dev/null; then
+    echo -e "${RED}❌ gcloud CLI not found. Please install Google Cloud SDK.${NC}"
+    exit 1
+fi
+
+# Check if logged in to gcloud
+if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q .; then
+    echo -e "${YELLOW}⚠️  Not logged in to gcloud. Running gcloud auth login...${NC}"
+    gcloud auth login
+fi
+
+# Check if project is set
+PROJECT=$(gcloud config get-value project 2>/dev/null)
+if [ -z "$PROJECT" ]; then
+    echo -e "${YELLOW}⚠️  No Google Cloud project set.${NC}"
+    echo "Available projects:"
+    gcloud projects list
+    echo ""
+    read -p "Enter project ID: " PROJECT
+    gcloud config set project $PROJECT
+fi
+
+echo -e "${GREEN}✓ Using project: $PROJECT${NC}"
+
+# Build the Next.js app
+echo -e "\n📦 Building Next.js app..."
+npm run build
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}❌ Build failed!${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Build successful${NC}"
+
+# Deploy to App Engine
+echo -e "\n☁️  Deploying to Google Cloud App Engine..."
+gcloud app deploy --quiet
+
+if [ $? -eq 0 ]; then
+    echo -e "\n${GREEN}✅ Deployment successful!${NC}"
+    echo -e "\n🌐 Opening deployed app..."
+    gcloud app browse
+else
+    echo -e "${RED}❌ Deployment failed!${NC}"
+    exit 1
+fi
+
+echo -e "\n${GREEN}🎉 Done!${NC}"
+echo ""
+echo "Useful commands:"
+echo "  View logs:     gcloud app logs tail -s default"
+echo "  View services: gcloud app services list"
+echo "  Open app:      gcloud app browse"
+

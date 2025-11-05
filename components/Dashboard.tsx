@@ -1,95 +1,332 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { Card, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { MapPin, Star, Users, Filter, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
-import RestaurantCard from './RestaurantCard';
+import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 
 interface DashboardProps {
   userId: string;
   userLocation?: { lat: number; lng: number };
+  userName?: string;
 }
 
-export default function Dashboard({ userId, userLocation }: DashboardProps) {
+export default function Dashboard({ userId, userLocation, userName = 'Derek' }: DashboardProps) {
   const [recommendations, setRecommendations] = useState<RestaurantRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'favorites' | 'recommended' | 'smart-match'>('all');
+  const [tasteProfile, setTasteProfile] = useState<any>(null);
 
   useEffect(() => {
-    loadRecommendations();
+    loadData();
   }, [userId, userLocation]);
 
-  async function loadRecommendations() {
+  async function loadData() {
     setLoading(true);
     try {
-      const recs = await getPersonalizedRecommendations(userId, userLocation);
+      const [recs, profile] = await Promise.all([
+        getPersonalizedRecommendations(userId, userLocation),
+        getTasteProfile(userId),
+      ]);
       setRecommendations(recs);
+      setTasteProfile(profile);
     } catch (error) {
-      console.error('Error loading recommendations:', error);
+      console.error('Error loading data:', error);
     } finally {
       setLoading(false);
     }
   }
 
-  const filteredRecommendations = selectedFilter === 'all'
-    ? recommendations
-    : recommendations.filter(rec => rec.matchType === selectedFilter);
+  // Prepare taste data for radar chart
+  const tasteData = tasteProfile ? [
+    { trait: 'Quiet', score: tasteProfile.preferences.quietness },
+    { trait: 'Speed', score: 70 }, // Service speed - could be derived from preferences
+    { trait: 'Service', score: tasteProfile.preferences.serviceQuality },
+    { trait: 'Healthy', score: tasteProfile.preferences.healthiness },
+    { trait: 'Impress', score: tasteProfile.preferences.atmosphere },
+    { trait: 'Value', score: tasteProfile.preferences.value },
+  ] : [
+    { trait: 'Quiet', score: 85 },
+    { trait: 'Speed', score: 70 },
+    { trait: 'Service', score: 90 },
+    { trait: 'Healthy', score: 65 },
+    { trait: 'Impress', score: 88 },
+    { trait: 'Value', score: 75 },
+  ];
+
+  // Top picks (favorites)
+  const topPicks = recommendations
+    .filter(r => r.matchType === 'personal-favorite')
+    .slice(0, 3);
+
+  // Friend recommendations
+  const friendPicks = recommendations
+    .filter(r => r.matchType === 'friend-recommendation')
+    .slice(0, 2);
+
+  // Nearby picks for map section
+  const nearbyPicks = recommendations.slice(0, 3);
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">
-          Welcome to Nexus Nosh
-        </h1>
-        <p className="text-gray-600">
-          Discover your perfect dining spot for every occasion
-        </p>
-      </div>
+    <div className="p-6 space-y-8 bg-gradient-to-b from-orange-50 to-white min-h-screen pb-24">
+      <header className="text-center">
+        <h1 className="text-3xl font-bold mb-2">Nexus Nosh</h1>
+        <p className="text-gray-600">Smart lunch pairings for business and pleasure</p>
+      </header>
 
-      {/* Filter Tabs */}
-      <div className="flex gap-4 mb-6 border-b border-gray-200">
-        {[
-          { id: 'all', label: 'All' },
-          { id: 'personal-favorite', label: 'Favorites' },
-          { id: 'friend-recommendation', label: 'Friend Picks' },
-          { id: 'smart-match', label: 'Smart Matches' },
-        ].map(filter => (
-          <button
-            key={filter.id}
-            onClick={() => setSelectedFilter(filter.id as any)}
-            className={`px-4 py-2 font-medium transition-colors ${
-              selectedFilter === filter.id || 
-              (filter.id === 'personal-favorite' && selectedFilter === 'favorites') ||
-              (filter.id === 'friend-recommendation' && selectedFilter === 'recommended')
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
+      {/* Welcome / Home Screen */}
+      <motion.section 
+        initial={{ opacity: 0, y: 10 }} 
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <Card className="shadow-md rounded-2xl p-4">
+          <CardContent>
+            <h2 className="text-xl font-semibold mb-3">Welcome Back, {userName}!</h2>
+            <p className="text-gray-500 mb-4">Here are your top lunch spots today:</p>
+            {loading ? (
+              <div className="grid md:grid-cols-3 gap-4">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="rounded-xl border p-3 bg-gray-100 animate-pulse h-20" />
+                ))}
+              </div>
+            ) : topPicks.length > 0 ? (
+              <div className="grid md:grid-cols-3 gap-4">
+                {topPicks.map((rec) => (
+                  <Card key={rec.restaurant.id} className="rounded-xl shadow-sm border p-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-semibold">{rec.restaurant.name}</span>
+                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                    </div>
+                    <p className="text-gray-500 text-sm">
+                      {rec.reasons[0] || 'Perfect for business lunches'}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-3 gap-4">
+                {['Cliffside Restaurant', 'Wood Ash Rye', 'Painted Pony'].map((r) => (
+                  <Card key={r} className="rounded-xl shadow-sm border p-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-semibold">{r}</span>
+                      <Star className="w-4 h-4 text-yellow-500" />
+                    </div>
+                    <p className="text-gray-500 text-sm">Perfect for business lunches</p>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.section>
 
-      {/* Recommendations Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="bg-gray-200 animate-pulse h-64 rounded-lg" />
-          ))}
-        </div>
-      ) : filteredRecommendations.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500 text-lg">
-            No recommendations found. Start rating restaurants to get personalized suggestions!
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRecommendations.map((rec) => (
-            <RestaurantCard key={rec.restaurant.id} recommendation={rec} />
-          ))}
-        </div>
-      )}
+      {/* Recommendations & Social Section */}
+      <motion.section 
+        initial={{ opacity: 0, y: 10 }} 
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.1 }}
+      >
+        <Card className="shadow-md rounded-2xl p-4">
+          <CardContent>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Smart Recommendations</h2>
+              <Button variant="outline" size="sm">
+                <Filter className="w-4 h-4 mr-1" />
+                Filters
+              </Button>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              {recommendations.length > 0 && recommendations[0] ? (
+                <>
+                  <Card className="p-3 border rounded-xl">
+                    <div className="flex items-center mb-2">
+                      <MapPin className="w-4 h-4 mr-2 text-orange-500" />
+                      <span className="font-semibold">{recommendations[0].restaurant.name}</span>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      {recommendations[0].reasons[0] || 'Great match for your preferences'}
+                    </p>
+                  </Card>
+                  {friendPicks.length > 0 ? (
+                    <Card className="p-3 border rounded-xl">
+                      <div className="flex items-center mb-2">
+                        <Users className="w-4 h-4 mr-2 text-blue-500" />
+                        <span className="font-semibold">Friend Picks</span>
+                      </div>
+                      <p className="text-sm text-gray-500">
+                        {friendPicks[0].friendRecommendations?.[0]?.userName || 'Friends'} rated '{friendPicks[0].restaurant.name}' highly
+                      </p>
+                    </Card>
+                  ) : (
+                    <Card className="p-3 border rounded-xl">
+                      <div className="flex items-center mb-2">
+                        <Users className="w-4 h-4 mr-2 text-blue-500" />
+                        <span className="font-semibold">Friend Picks</span>
+                      </div>
+                      <p className="text-sm text-gray-500">Machell and Adam both rated 'Farmstead' 9/10</p>
+                    </Card>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Card className="p-3 border rounded-xl">
+                    <div className="flex items-center mb-2">
+                      <MapPin className="w-4 h-4 mr-2 text-orange-500" />
+                      <span className="font-semibold">George's Corner</span>
+                    </div>
+                    <p className="text-sm text-gray-500">Energetic casual spot for quick team lunches</p>
+                  </Card>
+                  <Card className="p-3 border rounded-xl">
+                    <div className="flex items-center mb-2">
+                      <Users className="w-4 h-4 mr-2 text-blue-500" />
+                      <span className="font-semibold">Friend Picks</span>
+                    </div>
+                    <p className="text-sm text-gray-500">Machell and Adam both rated 'Farmstead' 9/10</p>
+                  </Card>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.section>
+
+      {/* Map / Nearby Picks */}
+      <motion.section 
+        initial={{ opacity: 0, y: 10 }} 
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.2 }}
+      >
+        <Card className="shadow-md rounded-2xl p-4">
+          <CardContent>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Map — Nearby Picks</h2>
+              <Button variant="outline" size="sm">
+                <MapPin className="w-4 h-4 mr-1" />
+                Near Me
+              </Button>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="md:col-span-2 rounded-xl border overflow-hidden">
+                <div className="w-full h-72 bg-[conic-gradient(at_30%_30%,#fde68a,#fff,#fae8ff)] flex items-center justify-center text-gray-700">
+                  <span className="text-sm text-center px-4">
+                    [ Map placeholder — pins for favorites, friend picks, and new matches ]
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {nearbyPicks.length > 0 ? (
+                  nearbyPicks.map((rec) => (
+                    <Card key={rec.restaurant.id} className="p-3 border rounded-xl">
+                      <p className="font-semibold">{rec.restaurant.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {rec.restaurant.attributes.atmosphere} • {rec.reasons[0] || 'Recommended'}
+                      </p>
+                    </Card>
+                  ))
+                ) : (
+                  [
+                    { name: 'Cliffside', note: 'Quiet • Impress 9/10' },
+                    { name: 'Wood Ash Rye', note: 'Upscale • Service 9/10' },
+                    { name: 'Farmstead', note: 'Friend pick • Value 8/10' },
+                  ].map((i) => (
+                    <Card key={i.name} className="p-3 border rounded-xl">
+                      <p className="font-semibold">{i.name}</p>
+                      <p className="text-sm text-gray-500">{i.note}</p>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.section>
+
+      {/* Calendar / Meeting Mode */}
+      <motion.section 
+        initial={{ opacity: 0, y: 10 }} 
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.3 }}
+      >
+        <Card className="shadow-md rounded-2xl p-4">
+          <CardContent>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Upcoming Meetings</h2>
+              <Clock className="w-4 h-4 text-gray-500" />
+            </div>
+            <div className="space-y-3">
+              <Card className="p-3 border rounded-xl bg-orange-50">
+                <p className="font-semibold">Lunch with Tim and Jessica</p>
+                <p className="text-sm text-gray-500">Suggested: Painted Pony (mutual favorite)</p>
+              </Card>
+              <Card className="p-3 border rounded-xl bg-blue-50">
+                <p className="font-semibold">Investor Meetup</p>
+                <p className="text-sm text-gray-500">Suggestion: Wood Ash Rye — quiet and upscale</p>
+              </Card>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.section>
+
+      {/* AI Taste Profile */}
+      <motion.section 
+        initial={{ opacity: 0, y: 10 }} 
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.4 }}
+      >
+        <Card className="shadow-md rounded-2xl p-4">
+          <CardContent>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Your Taste Profile</h2>
+              <span className="text-sm text-gray-500">Learned from your ratings & notes</span>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4 items-center">
+              <div className="md:col-span-2 h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={tasteData} cx="50%" cy="50%" outerRadius="80%">
+                    <PolarGrid />
+                    <PolarAngleAxis dataKey="trait" />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                    <Radar 
+                      name="You" 
+                      dataKey="score" 
+                      stroke="#fb923c" 
+                      fill="#fb923c" 
+                      fillOpacity={0.3} 
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>
+                  • You favor <span className="font-semibold">quiet</span> spaces and high{' '}
+                  <span className="font-semibold">service</span>.
+                </p>
+                <p>
+                  • Try more <span className="font-semibold">healthy</span> options similar to your favorites.
+                </p>
+                <p>
+                  • Friends lean slightly higher on <span className="font-semibold">value</span> — consider overlap picks.
+                </p>
+                <div className="pt-2">
+                  <Button variant="outline" size="sm">Compare with Friends</Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.section>
+
+      {/* Action Bar */}
+      <div className="fixed bottom-6 inset-x-0 flex justify-center z-10">
+        <Button className="rounded-full shadow-lg px-8 py-6 text-lg bg-orange-500 hover:bg-orange-600">
+          + Add Restaurant
+        </Button>
+      </div>
     </div>
   );
 }

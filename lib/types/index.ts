@@ -146,3 +146,4 @@ export interface MapPin {
   restaurant: Restaurant;
   color: string;
 }
+
