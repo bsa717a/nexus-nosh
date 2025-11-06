@@ -13,5 +13,20 @@
       "**/.next": true,
       "**/node_modules": true
     }
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Setup Workspace",
+        "type": "shell",
+        "command": "./workspace-setup.sh",
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        },
+        "problemMatcher": []
+      }
+    ]
   }
 }

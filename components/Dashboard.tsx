@@ -1,9 +1,8 @@
-'use client';
-
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MapPin, Star, Users, Filter, Clock } from 'lucide-react';
+import { MapPin, Star, Users, Filter, Clock, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { RestaurantRecommendation } from '@/lib/types';
@@ -322,8 +321,16 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       </motion.section>
 
       {/* Action Bar */}
-      <div className="fixed bottom-6 inset-x-0 flex justify-center z-10">
-        <Button className="rounded-full shadow-lg px-8 py-6 text-lg bg-orange-500 hover:bg-orange-600">
+      <div className="fixed bottom-6 inset-x-0 flex justify-center z-10 gap-4">
+        <Link href="/profile">
+          <Button 
+            className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white"
+          >
+            <User className="w-5 h-5 mr-2" />
+            Profile
+          </Button>
+        </Link>
+        <Button className="rounded-full shadow-lg px-8 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white">
           + Add Restaurant
         </Button>
       </div>
