@@ -7,6 +7,8 @@
 node_modules/
 .next/
 .env*.local
+# Don't ignore .env.production - needed for build
+!.env.production
 .DS_Store
 *.log
 coverage/
