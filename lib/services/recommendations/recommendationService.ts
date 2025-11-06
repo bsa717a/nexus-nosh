@@ -31,44 +31,82 @@ export async function getPersonalizedRecommendations(
   limitCount: number = 20
 ): Promise<RestaurantRecommendation[]> {
   if (!isFirebaseConfigured || !db) {
-    console.warn('Firebase not configured. Returning empty recommendations.');
+    console.warn('[getPersonalizedRecommendations] Firebase not configured. Returning empty recommendations.');
     return [];
   }
   
   try {
+    console.log('[getPersonalizedRecommendations] Starting for user:', userId);
     const profile = await getTasteProfile(userId);
-    if (!profile) return [];
+    console.log('[getPersonalizedRecommendations] Profile:', profile);
+    
+    // Create default profile if none exists
+    const defaultProfile: TasteProfile = {
+      userId,
+      preferences: {
+        quietness: 50,
+        serviceQuality: 50,
+        healthiness: 50,
+        value: 50,
+        atmosphere: 50,
+        cuisineTypes: [],
+        priceRange: { min: 10, max: 100 },
+      },
+      learningData: {
+        totalRatings: 0,
+        averageRating: 0,
+        lastUpdated: new Date(),
+      },
+    };
+    
+    const activeProfile = profile || defaultProfile;
+    console.log('[getPersonalizedRecommendations] Using profile:', activeProfile);
 
     // Get user's past ratings to identify favorites
-    const ratingsQuery = query(
-      collection(db, RATINGS_COLLECTION),
-      where('userId', '==', userId),
-      orderBy('rating', 'desc'),
-      limit(10)
-    );
-    const ratingsSnapshot = await getDocs(ratingsQuery);
-    const favoriteRestaurantIds = ratingsSnapshot.docs
-      .filter(doc => doc.data().rating >= 4)
-      .map(doc => doc.data().restaurantId);
+    let favoriteRestaurantIds: string[] = [];
+    try {
+      const ratingsQuery = query(
+        collection(db, RATINGS_COLLECTION),
+        where('userId', '==', userId),
+        orderBy('rating', 'desc'),
+        limit(10)
+      );
+      const ratingsSnapshot = await getDocs(ratingsQuery);
+      favoriteRestaurantIds = ratingsSnapshot.docs
+        .filter(doc => doc.data().rating >= 4)
+        .map(doc => doc.data().restaurantId);
+    } catch (error) {
+      console.warn('[getPersonalizedRecommendations] Could not fetch ratings (may need index):', error);
+      // Continue without ratings
+    }
 
     // Get friend recommendations
-    const friendRecsQuery = query(
-      collection(db, FRIEND_RECOMMENDATIONS_COLLECTION),
-      where('toUserId', '==', userId)
-    );
-    const friendRecsSnapshot = await getDocs(friendRecsQuery);
-    const friendRecommendedIds = friendRecsSnapshot.docs.map(doc => doc.data().restaurantId);
+    let friendRecommendedIds: string[] = [];
+    try {
+      const friendRecsQuery = query(
+        collection(db, FRIEND_RECOMMENDATIONS_COLLECTION),
+        where('toUserId', '==', userId)
+      );
+      const friendRecsSnapshot = await getDocs(friendRecsQuery);
+      friendRecommendedIds = friendRecsSnapshot.docs.map(doc => doc.data().restaurantId);
+    } catch (error) {
+      console.warn('[getPersonalizedRecommendations] Could not fetch friend recommendations:', error);
+      // Continue without friend recommendations
+    }
 
     // Get all restaurants (in production, you'd add geolocation filtering)
+    console.log('[getPersonalizedRecommendations] Fetching restaurants from Firestore...');
     const restaurantsQuery = query(
       collection(db, RESTAURANTS_COLLECTION),
       limit(100)
     );
     const restaurantsSnapshot = await getDocs(restaurantsQuery);
+    console.log('[getPersonalizedRecommendations] Found', restaurantsSnapshot.docs.length, 'restaurants');
     const restaurants = restaurantsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     })) as Restaurant[];
+    console.log('[getPersonalizedRecommendations] Restaurants:', restaurants.map(r => r.name));
 
     // Score and rank restaurants
     const recommendations: RestaurantRecommendation[] = restaurants.map(restaurant => {
@@ -91,7 +129,7 @@ export async function getPersonalizedRecommendations(
       }
 
       // Taste profile matching
-      const pref = profile.preferences;
+      const pref = activeProfile.preferences;
       const attr = restaurant.attributes;
 
       // Quietness match
@@ -146,6 +184,12 @@ export async function getPersonalizedRecommendations(
         reasons.push('Highly rated');
       }
 
+      // Ensure at least one reason
+      if (reasons.length === 0) {
+        reasons.push('Great option in St. George');
+        score += 5; // Base score for all restaurants
+      }
+
       return {
         restaurant,
         score,
@@ -155,11 +199,13 @@ export async function getPersonalizedRecommendations(
     });
 
     // Sort by score and return top recommendations
-    return recommendations
+    const sorted = recommendations
       .sort((a, b) => b.score - a.score)
       .slice(0, limitCount);
+    console.log('[getPersonalizedRecommendations] Returning', sorted.length, 'recommendations');
+    return sorted;
   } catch (error) {
-    console.error('Error getting recommendations:', error);
+    console.error('[getPersonalizedRecommendations] Error getting recommendations:', error);
     return [];
   }
 }

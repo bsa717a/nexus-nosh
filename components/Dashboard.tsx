@@ -10,6 +10,7 @@ import { RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { useAuth } from '@/lib/auth/useAuth';
+import MapView from '@/components/MapView';
 
 interface DashboardProps {
   userId: string;
@@ -31,14 +32,17 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   async function loadData() {
     setLoading(true);
     try {
+      console.log('[Dashboard] Loading recommendations for user:', userId);
       const [recs, profile] = await Promise.all([
         getPersonalizedRecommendations(userId, userLocation),
         getTasteProfile(userId),
       ]);
+      console.log('[Dashboard] Recommendations loaded:', recs.length, recs);
+      console.log('[Dashboard] Taste profile loaded:', profile);
       setRecommendations(recs);
       setTasteProfile(profile);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('[Dashboard] Error loading data:', error);
     } finally {
       setLoading(false);
     }
@@ -232,12 +236,12 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               </Button>
             </div>
             <div className="grid md:grid-cols-3 gap-4">
-              <div className="md:col-span-2 rounded-xl border overflow-hidden">
-                <div className="w-full h-72 bg-[conic-gradient(at_30%_30%,#fde68a,#fff,#fae8ff)] flex items-center justify-center text-gray-700">
-                  <span className="text-sm text-center px-4">
-                    [ Map placeholder — pins for favorites, friend picks, and new matches ]
-                  </span>
-                </div>
+              <div className="md:col-span-2 rounded-xl overflow-hidden">
+                <MapView 
+                  recommendations={recommendations.slice(0, 10)} 
+                  center={userLocation || { lat: 37.0965, lng: -113.5684 }}
+                  height="400px"
+                />
               </div>
               <div className="space-y-3">
                 {nearbyPicks.length > 0 ? (
@@ -342,20 +346,26 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
         </Card>
       </motion.section>
 
-      {/* Action Bar */}
-      <div className="fixed bottom-6 inset-x-0 flex justify-center z-10 gap-4">
-        <Link href="/profile">
-          <Button 
-            className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white"
-          >
-            <User className="w-5 h-5 mr-2" />
-            Profile
-          </Button>
-        </Link>
-        <Button className="rounded-full shadow-lg px-8 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white">
-          + Add Restaurant
-        </Button>
-      </div>
+               {/* Action Bar */}
+               <div className="fixed bottom-6 inset-x-0 flex justify-center z-10 gap-4">
+                 <Link href="/profile">
+                   <Button
+                     className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white"
+                   >
+                     <User className="w-5 h-5 mr-2" />
+                     Profile
+                   </Button>
+                 </Link>
+                 <Link href="/restaurants">
+                   <Button className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white">
+                     <MapPin className="w-5 h-5 mr-2" />
+                     Restaurants
+                   </Button>
+                 </Link>
+                 <Button className="rounded-full shadow-lg px-8 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white">
+                   + Add Restaurant
+                 </Button>
+               </div>
     </div>
   );
 }
