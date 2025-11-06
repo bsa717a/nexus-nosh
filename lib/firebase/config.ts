@@ -16,8 +16,10 @@ const firebaseConfig = {
 const isFirebaseConfigured = 
   firebaseConfig.apiKey && 
   firebaseConfig.apiKey !== 'placeholder_api_key' &&
+  firebaseConfig.apiKey.length > 10 && // Ensure it's a real key
   firebaseConfig.projectId &&
-  firebaseConfig.projectId !== 'placeholder_project_id';
+  firebaseConfig.projectId !== 'placeholder_project_id' &&
+  firebaseConfig.projectId.length > 0;
 
 // Initialize Firebase only if configured and in browser
 let app: FirebaseApp | undefined;
@@ -25,31 +27,41 @@ let db: Firestore | undefined;
 let auth: Auth | undefined;
 let storage: FirebaseStorage | undefined;
 
-if (typeof window !== 'undefined' && isFirebaseConfigured) {
-  try {
-    if (!getApps().length) {
-      app = initializeApp(firebaseConfig);
-    } else {
-      app = getApps()[0];
+if (typeof window !== 'undefined') {
+  if (isFirebaseConfigured) {
+    try {
+      if (!getApps().length) {
+        app = initializeApp(firebaseConfig);
+      } else {
+        app = getApps()[0];
+      }
+      db = getFirestore(app);
+      auth = getAuth(app);
+      storage = getStorage(app);
+
+      // Try to ensure network is enabled (async, fire and forget)
+      enableNetwork(db).then(() => {
+        console.log('✓ Firestore network enabled');
+      }).catch((error) => {
+        console.warn('Could not enable Firestore network:', error);
+      });
+
+      console.log('Firebase initialized:', {
+        hasDb: !!db,
+        hasAuth: !!auth,
+        projectId: firebaseConfig.projectId,
+        apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing'
+      });
+    } catch (error) {
+      console.error('Firebase initialization failed:', error);
     }
-    db = getFirestore(app);
-    auth = getAuth(app);
-    storage = getStorage(app);
-    
-    // Try to ensure network is enabled (async, fire and forget)
-    enableNetwork(db).then(() => {
-      console.log('✓ Firestore network enabled');
-    }).catch((error) => {
-      console.warn('Could not enable Firestore network:', error);
+  } else {
+    console.warn('Firebase not configured. Missing or invalid credentials:', {
+      hasApiKey: !!firebaseConfig.apiKey,
+      hasProjectId: !!firebaseConfig.projectId,
+      apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing',
+      projectId: firebaseConfig.projectId || 'missing'
     });
-    
-    console.log('Firebase initialized:', {
-      hasDb: !!db,
-      hasAuth: !!auth,
-      projectId: firebaseConfig.projectId
-    });
-  } catch (error) {
-    console.warn('Firebase initialization failed. Using placeholder mode:', error);
   }
 }
 
