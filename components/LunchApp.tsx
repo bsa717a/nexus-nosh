@@ -80,7 +80,7 @@ export default function LunchApp() {
             </div>
             <div className="grid md:grid-cols-3 gap-4">
               <div className="md:col-span-2">
-                <MapView restaurants={RESTAURANTS} center={center} />
+                <MapView recommendations={[]} center={center} />
               </div>
               <div className="space-y-3">
                 {RESTAURANTS.map((i) => (
