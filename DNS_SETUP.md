@@ -46,12 +46,42 @@ After DNS propagation (can take up to 48 hours, usually much faster):
 - Visit: https://nexusnosh.clifsmama.com
 - The site should load with SSL
 
-## Current App Engine URL
+## DNS Records to Add
+
+**Domain mapping created successfully!**
+
+Add the following DNS record at your domain registrar (where `clifsmama.com` is registered):
+
+### CNAME Record
+- **Type**: CNAME
+- **Name/Host**: `nexusnosh`
+- **Value/Target**: `ghs.googlehosted.com.` (note the trailing dot)
+- **TTL**: 3600 (or default)
+
+### Example DNS Configuration
+```
+nexusnosh.clifsmama.com  CNAME  ghs.googlehosted.com.
+```
+
+Or if your DNS provider uses separate fields:
+- Host: `nexusnosh`
+- Type: `CNAME`
+- Points to: `ghs.googlehosted.com.`
+
+## Current App Engine URLs
 - Default URL: https://nexus-nosh.uc.r.appspot.com
-- Custom Domain (after setup): https://nexusnosh.clifsmama.com
+- Custom Domain: https://nexusnosh.clifsmama.com (will work after DNS propagation)
+
+## Next Steps
+1. ✅ Domain ownership verified
+2. ✅ Domain mapping created in App Engine
+3. ⏳ Add CNAME record at DNS provider (see above)
+4. ⏳ Wait for DNS propagation (usually 1-24 hours)
+5. ⏳ SSL certificate will be automatically provisioned by Google Cloud
 
 ## Notes
-- DNS changes can take 24-48 hours to propagate globally
-- SSL certificate provisioning is automatic but may take a few hours
+- DNS changes can take 24-48 hours to propagate globally (usually much faster)
+- SSL certificate provisioning is automatic but may take a few hours after DNS propagates
 - Both URLs will work once configured (default and custom domain)
+- You can check DNS propagation status with: `dig nexusnosh.clifsmama.com` or `nslookup nexusnosh.clifsmama.com`
 
