@@ -46,45 +46,63 @@ let storage: FirebaseStorage | undefined;
 function initializeFirebase() {
   // Only initialize in browser
   if (typeof window === 'undefined') {
+    console.log('[Firebase] Skipping initialization (server-side)');
     return;
   }
 
   // If already initialized, return
   if (app && auth && db) {
+    console.log('[Firebase] Already initialized, skipping');
     return;
   }
 
+  console.log('[Firebase] Starting initialization...', {
+    isFirebaseConfigured,
+    hasApiKey: !!firebaseConfig.apiKey,
+    hasProjectId: !!firebaseConfig.projectId,
+    apiKeyPreview: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 15)}...` : 'MISSING',
+    projectId: firebaseConfig.projectId || 'MISSING'
+  });
+
   try {
     if (!isFirebaseConfigured) {
-      console.error('[Firebase] Not configured. Missing or invalid credentials:', {
+      const errorMsg = '[Firebase] Not configured. Missing or invalid credentials';
+      console.error(errorMsg, {
         hasApiKey: !!firebaseConfig.apiKey,
         hasProjectId: !!firebaseConfig.projectId,
         apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing',
         projectId: firebaseConfig.projectId || 'missing',
+        apiKeyLength: firebaseConfig.apiKey?.length || 0,
         config: firebaseConfig
       });
-      return;
+      throw new Error(errorMsg);
     }
 
     if (!getApps().length) {
+      console.log('[Firebase] Initializing new app...');
       app = initializeApp(firebaseConfig);
-      console.log('[Firebase] App initialized');
+      console.log('[Firebase] ✓ App initialized successfully');
     } else {
       app = getApps()[0];
-      console.log('[Firebase] Using existing app');
+      console.log('[Firebase] ✓ Using existing app');
     }
     
+    console.log('[Firebase] Getting Firestore, Auth, and Storage...');
     db = getFirestore(app);
     auth = getAuth(app);
     storage = getStorage(app);
 
-    console.log('[Firebase] Services initialized:', {
+    console.log('[Firebase] ✓ Services initialized:', {
       hasDb: !!db,
       hasAuth: !!auth,
       hasStorage: !!storage,
       projectId: firebaseConfig.projectId,
       apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing'
     });
+
+    if (!auth) {
+      throw new Error('getAuth() returned undefined');
+    }
 
     // Try to ensure network is enabled (async, fire and forget)
     enableNetwork(db).then(() => {
@@ -93,11 +111,15 @@ function initializeFirebase() {
       console.warn('[Firebase] Could not enable Firestore network:', error);
     });
   } catch (error) {
-    console.error('[Firebase] Initialization failed:', error);
-    console.error('[Firebase] Error details:', {
+    const errorDetails = {
       message: (error as Error).message,
-      stack: (error as Error).stack
-    });
+      stack: (error as Error).stack,
+      name: (error as Error).name
+    };
+    console.error('[Firebase] ✗ Initialization failed:', error);
+    console.error('[Firebase] ✗ Error details:', errorDetails);
+    // Re-throw so callers know initialization failed
+    throw error;
   }
 }
 
@@ -111,8 +133,29 @@ export function getFirebaseAuth(): Auth {
   if (typeof window === 'undefined') {
     throw new Error('Firebase Auth can only be used in the browser');
   }
-  initializeFirebase();
+  
+  // Try to initialize
+  try {
+    initializeFirebase();
+  } catch (error) {
+    console.error('[getFirebaseAuth] Initialization error:', error);
+    throw new Error(`Firebase initialization failed: ${(error as Error).message}`);
+  }
+  
   if (!auth) {
+    // Log detailed diagnostics
+    console.error('[getFirebaseAuth] Auth is undefined after initialization attempt', {
+      hasApp: !!app,
+      hasDb: !!db,
+      hasAuth: !!auth,
+      isFirebaseConfigured,
+      firebaseConfig: {
+        hasApiKey: !!firebaseConfig.apiKey,
+        hasProjectId: !!firebaseConfig.projectId,
+        apiKeyLength: firebaseConfig.apiKey?.length || 0,
+        projectId: firebaseConfig.projectId
+      }
+    });
     throw new Error('Firebase Auth not initialized. Check Firebase configuration.');
   }
   return auth;
