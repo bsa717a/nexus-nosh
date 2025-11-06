@@ -3,15 +3,15 @@ import { getFirestore, Firestore, enableNetwork, disableNetwork } from 'firebase
 import { getAuth, Auth } from 'firebase/auth';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 
-// Get Firebase config from environment variables
-// In production, these should be set in app.yaml env_variables
+// Firebase configuration
+// Using fallback values for production (these are public keys, safe to include)
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyBwDU2LlhEXIzB5iw4zhq_uepf2K4skPSc',
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'nexus-nosh.firebaseapp.com',
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'nexus-nosh',
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'nexus-nosh.firebasestorage.app',
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '251223233015',
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:251223233015:web:26460b83dd6a21f5ce1ef2',
 };
 
 // Debug: Log what we're getting (only first few chars of sensitive data)
@@ -27,10 +27,11 @@ if (typeof window !== 'undefined') {
 }
 
 // Check if Firebase is properly configured
+// With fallback values, this should always be true in production
 const isFirebaseConfigured = 
   firebaseConfig.apiKey && 
   firebaseConfig.apiKey !== 'placeholder_api_key' &&
-  firebaseConfig.apiKey.length > 10 && // Ensure it's a real key
+  firebaseConfig.apiKey.length > 10 &&
   firebaseConfig.projectId &&
   firebaseConfig.projectId !== 'placeholder_project_id' &&
   firebaseConfig.projectId.length > 0;

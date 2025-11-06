@@ -11,7 +11,8 @@ interface MapViewProps {
 }
 
 export default function MapView({ recommendations, center, height = '400px' }: MapViewProps) {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  // Mapbox token with fallback (public token, safe to include)
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoiYnNhNzE3IiwiYSI6ImNtaG13YnZvczIxcHIybXB1N2E0NnJpcHcifQ.Z-AeF3-pt2ihl2uz71Lvxg';
   const [selectedRestaurant, setSelectedRestaurant] = useState<RestaurantRecommendation | null>(null);
 
   // Debug logging
