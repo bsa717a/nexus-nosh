@@ -1,8 +1,12 @@
 import Head from 'next/head'
 import Settings from '../components/Settings'
+import ProtectedRoute from '../components/ProtectedRoute'
+import { useAuth } from '@/lib/auth/useAuth'
 
-export default function SettingsPage() {
-  const demoUserId = 'demo-user-123';
+function SettingsPageContent() {
+  const { user } = useAuth();
+
+  if (!user) return null;
 
   return (
     <>
@@ -12,8 +16,16 @@ export default function SettingsPage() {
         <meta name="description" content="Manage your Nexus Nosh preferences and settings" />
       </Head>
       <main>
-        <Settings userId={demoUserId} />
+        <Settings userId={user.uid} />
       </main>
     </>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <ProtectedRoute>
+      <SettingsPageContent />
+    </ProtectedRoute>
   )
 }

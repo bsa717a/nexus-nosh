@@ -1,7 +1,6 @@
-'use client';
-
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { User, Edit2, Save, X, Settings, Star, MapPin, Users, Clock, LogOut, ArrowLeft } from 'lucide-react';
@@ -9,21 +8,39 @@ import { motion } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { TasteProfile, User as UserType } from '@/lib/types';
+import { useAuth } from '@/lib/auth/useAuth';
 
 interface ProfileProps {
   userId: string;
 }
 
 export default function Profile({ userId }: ProfileProps) {
+  const { signOut, user } = useAuth();
+  const router = useRouter();
   const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [userInfo, setUserInfo] = useState({
-    displayName: 'Derek',
-    email: 'derek@example.com',
+    displayName: user?.displayName || user?.email?.split('@')[0] || 'User',
+    email: user?.email || '',
     bio: 'Food enthusiast and business lunch connoisseur',
   });
   const [editForm, setEditForm] = useState(userInfo);
+
+  useEffect(() => {
+    if (user) {
+      setUserInfo({
+        displayName: user.displayName || user.email?.split('@')[0] || 'User',
+        email: user.email || '',
+        bio: 'Food enthusiast and business lunch connoisseur',
+      });
+      setEditForm({
+        displayName: user.displayName || user.email?.split('@')[0] || 'User',
+        email: user.email || '',
+        bio: 'Food enthusiast and business lunch connoisseur',
+      });
+    }
+  }, [user]);
 
   useEffect(() => {
     loadProfile();
@@ -365,7 +382,17 @@ export default function Profile({ userId }: ProfileProps) {
                 <Clock className="w-4 h-4 mr-2" />
                 My Meetings
               </Button>
-              <Button className="justify-start bg-orange-500 hover:bg-orange-600 text-white">
+              <Button 
+                className="justify-start bg-orange-500 hover:bg-orange-600 text-white"
+                onClick={async () => {
+                  try {
+                    await signOut();
+                    router.push('/login');
+                  } catch (error) {
+                    console.error('Error signing out:', error);
+                  }
+                }}
+              >
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign Out
               </Button>

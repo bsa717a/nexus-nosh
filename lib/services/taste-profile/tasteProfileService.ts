@@ -1,13 +1,14 @@
-import { db, isFirebaseConfigured } from '@/lib/firebase/config';
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  query, 
-  where, 
-  getDocs 
+import { db, isFirebaseConfigured, auth } from '@/lib/firebase/config';
+import {
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  query,
+  where,
+  getDocs,
+  serverTimestamp
 } from 'firebase/firestore';
 import { TasteProfile, Rating } from '@/lib/types';
 
@@ -40,6 +41,8 @@ export async function getTasteProfile(userId: string): Promise<TasteProfile | nu
   }
   
   try {
+  // Network is already enabled in config.ts, no need to enable again
+    
     const profileRef = doc(db, TASTE_PROFILES_COLLECTION, userId);
     const profileSnap = await getDoc(profileRef);
     
@@ -148,6 +151,129 @@ export async function updateTasteProfileFromRating(
     });
   } catch (error) {
     console.error('Error updating taste profile:', error);
+  }
+}
+
+/**
+ * Update taste profile preferences directly (from settings page)
+ */
+export async function updateTasteProfile(
+  userId: string,
+  preferences: Partial<TasteProfile['preferences']>
+): Promise<void> {
+  console.log('[updateTasteProfile] Starting...', { userId, preferences });
+  
+  if (!isFirebaseConfigured) {
+    console.error('[updateTasteProfile] Firebase not configured!');
+    throw new Error('Firebase is not configured');
+  }
+  
+  if (!db) {
+    console.error('[updateTasteProfile] Firestore database not initialized!');
+    throw new Error('Firestore database not initialized');
+  }
+
+  try {
+    const profileRef = doc(db, TASTE_PROFILES_COLLECTION, userId);
+    console.log('[updateTasteProfile] Document reference created:', profileRef.path);
+    
+    // Try to get existing profile (with quick timeout for offline detection)
+    let currentProfile: TasteProfile | null = null;
+    try {
+      console.log('[updateTasteProfile] Attempting to read existing profile...');
+      const profileSnap = await Promise.race([
+        getDoc(profileRef),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout')), 2000)
+        )
+      ]) as any;
+      
+      if (profileSnap && profileSnap.exists()) {
+        currentProfile = profileSnap.data() as TasteProfile;
+        console.log('[updateTasteProfile] Found existing profile:', currentProfile);
+      } else {
+        console.log('[updateTasteProfile] No existing profile found');
+      }
+    } catch (error: any) {
+      console.warn('[updateTasteProfile] Could not read existing profile (may be offline):', error.message);
+      // If timeout or offline, proceed without existing data
+    }
+
+    // Prepare update data - merge with existing if available
+    // Convert Date to Timestamp for Firestore
+    const { Timestamp } = await import('firebase/firestore');
+    
+    const updateData: any = {
+      userId,
+      preferences: {
+        ...(currentProfile?.preferences || {
+          quietness: 50,
+          serviceQuality: 50,
+          healthiness: 50,
+          value: 50,
+          atmosphere: 50,
+          cuisineTypes: [],
+          priceRange: { min: 10, max: 100 },
+        }),
+        ...preferences,
+      },
+      learningData: {
+        ...(currentProfile?.learningData || {
+          totalRatings: 0,
+          averageRating: 0,
+        }),
+        lastUpdated: Timestamp.now(),
+      },
+    };
+
+    // Ensure user is authenticated before attempting write
+    if (!auth || !auth.currentUser) {
+      throw new Error('User must be authenticated to save taste profile');
+    }
+    
+    console.log('[updateTasteProfile] User authenticated:', auth.currentUser.uid);
+    console.log('[updateTasteProfile] Saving data:', updateData);
+    
+    // Use setDoc with merge: true - works offline and syncs automatically
+    // Increase timeout to 30 seconds to allow for slower connections
+    console.log('[updateTasteProfile] Attempting setDoc with merge...');
+    
+    // Wait for the write to complete with a timeout
+    await Promise.race([
+      setDoc(profileRef, updateData, { merge: true }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Write operation timed out after 30 seconds')), 30000)
+      )
+    ]);
+    
+    console.log('[updateTasteProfile] ✓ Successfully saved to Firebase!');
+  } catch (error: any) {
+    // Log full error object for debugging
+    console.error('[updateTasteProfile] ✗ Full error object:', error);
+    console.error('[updateTasteProfile] ✗ Error as JSON:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error('[updateTasteProfile] ✗ Error details:', {
+      message: error.message,
+      code: error.code,
+      serverResponse: error.serverResponse,
+      name: error.name,
+      stack: error.stack?.substring(0, 500),
+    });
+    
+    // Check for specific Firestore error codes
+    if (error.code === 'permission-denied' || error.code === 'PERMISSION_DENIED') {
+      throw new Error('Permission denied. Please ensure you are logged in and have permission to save this data.');
+    } else if (error.code === 'unauthenticated' || error.code === 'UNAUTHENTICATED') {
+      throw new Error('Authentication required. Please sign in and try again.');
+    } else if (error.code === 'invalid-argument' || error.code === 'INVALID_ARGUMENT') {
+      throw new Error('Invalid data format. Please check the data being saved.');
+    } else if (error.code === 'unavailable' || error.code === 'UNAVAILABLE') {
+      throw new Error('Firestore is currently unavailable. Please try again in a moment.');
+    } else if (error.message && error.message.includes('timed out')) {
+      console.warn('[updateTasteProfile] Write timed out - may complete in background if online');
+      throw new Error('Save operation timed out. Please check your connection and try again.');
+    }
+    
+    throw new Error(`Failed to save: ${error.message || error.code || 'Unknown error'}`);
   }
 }
 

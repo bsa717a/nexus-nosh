@@ -1,5 +1,5 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, Firestore, enableNetwork, disableNetwork } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 
@@ -35,6 +35,19 @@ if (typeof window !== 'undefined' && isFirebaseConfigured) {
     db = getFirestore(app);
     auth = getAuth(app);
     storage = getStorage(app);
+    
+    // Try to ensure network is enabled (async, fire and forget)
+    enableNetwork(db).then(() => {
+      console.log('✓ Firestore network enabled');
+    }).catch((error) => {
+      console.warn('Could not enable Firestore network:', error);
+    });
+    
+    console.log('Firebase initialized:', {
+      hasDb: !!db,
+      hasAuth: !!auth,
+      projectId: firebaseConfig.projectId
+    });
   } catch (error) {
     console.warn('Firebase initialization failed. Using placeholder mode:', error);
   }

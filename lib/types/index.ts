@@ -8,6 +8,17 @@ export interface User {
   updatedAt: Date;
 }
 
+export interface UserSettings {
+  userId: string;
+  notifications: {
+    emailNotifications: boolean;
+    pushNotifications: boolean;
+    friendRecommendations: boolean;
+    meetingReminders: boolean;
+  };
+  updatedAt: Date;
+}
+
 export interface TasteProfile {
   userId: string;
   preferences: {

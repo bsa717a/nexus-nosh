@@ -1,10 +1,12 @@
 import Head from 'next/head'
 import Profile from '../components/Profile'
+import ProtectedRoute from '../components/ProtectedRoute'
+import { useAuth } from '@/lib/auth/useAuth'
 
-export default function ProfilePage() {
-  // For local development, using a demo user ID
-  // In production, this would come from Firebase Auth
-  const demoUserId = 'demo-user-123';
+function ProfilePageContent() {
+  const { user } = useAuth();
+
+  if (!user) return null;
 
   return (
     <>
@@ -14,8 +16,16 @@ export default function ProfilePage() {
         <meta name="description" content="Your Nexus Nosh profile and preferences" />
       </Head>
       <main>
-        <Profile userId={demoUserId} />
+        <Profile userId={user.uid} />
       </main>
     </>
+  )
+}
+
+export default function ProfilePage() {
+  return (
+    <ProtectedRoute>
+      <ProfilePageContent />
+    </ProtectedRoute>
   )
 }

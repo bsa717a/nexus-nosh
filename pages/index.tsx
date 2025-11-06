@@ -1,10 +1,12 @@
 import Head from 'next/head'
 import Dashboard from '../components/Dashboard'
+import ProtectedRoute from '../components/ProtectedRoute'
+import { useAuth } from '@/lib/auth/useAuth'
 
-export default function Home() {
-  // For local development, using a demo user ID
-  // In production, this would come from Firebase Auth
-  const demoUserId = 'demo-user-123';
+function HomeContent() {
+  const { user } = useAuth();
+
+  if (!user) return null;
 
   return (
     <>
@@ -14,8 +16,16 @@ export default function Home() {
         <meta name="description" content="Personalized lunch-pairing and restaurant-recommendation experience" />
       </Head>
       <main>
-        <Dashboard userId={demoUserId} userName="Derek" />
+        <Dashboard userId={user.uid} userName={user.displayName || user.email?.split('@')[0] || 'User'} />
       </main>
     </>
+  )
+}
+
+export default function Home() {
+  return (
+    <ProtectedRoute>
+      <HomeContent />
+    </ProtectedRoute>
   )
 }

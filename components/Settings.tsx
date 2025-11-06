@@ -4,8 +4,10 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ArrowLeft, Save, Bell, Lock, Sliders } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
+import { getTasteProfile, updateTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
+import { getUserSettings, updateNotificationSettings } from '@/lib/services/user-settings/userSettingsService';
 import { TasteProfile } from '@/lib/types';
+import { useAuth } from '@/lib/auth/useAuth';
 
 interface SettingsProps {
   userId: string;
@@ -18,6 +20,8 @@ const CUISINE_OPTIONS = [
 ];
 
 export default function Settings({ userId }: SettingsProps) {
+  const { user } = useAuth();
+  const [saving, setSaving] = useState(false);
   const [preferences, setPreferences] = useState({
     quietness: 75,
     serviceQuality: 80,
@@ -44,7 +48,12 @@ export default function Settings({ userId }: SettingsProps) {
 
   async function loadSettings() {
     try {
-      const profile = await getTasteProfile(userId);
+      // Load taste preferences and notification settings in parallel
+      const [profile, userSettings] = await Promise.all([
+        getTasteProfile(userId),
+        getUserSettings(userId),
+      ]);
+
       if (profile) {
         setPreferences({
           quietness: profile.preferences.quietness,
@@ -56,6 +65,10 @@ export default function Settings({ userId }: SettingsProps) {
           priceRange: profile.preferences.priceRange || { min: 10, max: 50 },
         });
       }
+
+      if (userSettings) {
+        setNotificationSettings(userSettings.notifications);
+      }
     } catch (error) {
       console.error('Error loading settings:', error);
       // Continue with default values
@@ -63,18 +76,71 @@ export default function Settings({ userId }: SettingsProps) {
   }
 
   async function handleSave() {
+    setSaving(true);
+    console.log('Starting save to Firebase...', { userId, user: user?.uid, preferences, notificationSettings });
+    
     try {
-      // TODO: Update taste profile in Firebase
-      console.log('Saving preferences:', preferences);
-      console.log('Saving notification settings:', notificationSettings);
+      // Check if user is authenticated
+      if (!user) {
+        throw new Error('You must be logged in to save settings. Please sign in first.');
+      }
       
-      // Simulate save
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (user.uid !== userId) {
+        console.warn('User ID mismatch:', { authUserId: user.uid, propsUserId: userId });
+      }
       
-      alert('Settings saved successfully!');
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      alert('Failed to save settings. Please try again.');
+      console.log('User authenticated:', user.uid);
+      
+      // Wait for saves to complete (with timeout)
+      const saveResults = await Promise.allSettled([
+        updateTasteProfile(userId, preferences),
+        updateNotificationSettings(userId, notificationSettings),
+      ]);
+      
+      // Check results
+      const failures = saveResults.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        console.error('Some saves failed:', failures);
+        const errorMessages = failures.map(f => f.status === 'rejected' ? f.reason?.message : 'Unknown error').join(', ');
+        throw new Error(`Some settings failed to save: ${errorMessages}`);
+      }
+      
+      console.log('✓ All saves completed successfully!');
+      setSaving(false);
+      
+      // Show success message immediately
+      alert('Settings saved successfully to Firebase!');
+      
+      // Verify the save in the background (don't block UI)
+      // Use a longer delay to avoid state conflicts
+      setTimeout(async () => {
+        try {
+          // Add a small delay to let Firestore state settle
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const savedProfile = await getTasteProfile(userId);
+          const savedSettings = await getUserSettings(userId);
+          console.log('✓ Verified save - Data persisted:', { savedProfile, savedSettings });
+        } catch (error: any) {
+          // Don't show errors from verification - it's just a check
+          console.warn('Could not verify save (this is non-critical):', error?.message || error);
+        }
+      }, 3000);
+    } catch (error: any) {
+      console.error('✗ Save error:', error);
+      setSaving(false);
+      
+      const errorMessage = error?.message || 'Unknown error';
+      console.error('Save error details:', error);
+      
+      if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+        alert('Save operation timed out. This might be a connection issue. Please check:\n1. Your internet connection\n2. Browser console for detailed errors\n3. Try again in a moment');
+      } else if (errorMessage.includes('permission') || errorMessage.includes('PERMISSION_DENIED')) {
+        alert('Permission denied. You must be logged in to save settings. Please sign out and sign in again.');
+      } else if (errorMessage.includes('logged in') || errorMessage.includes('sign in')) {
+        alert(errorMessage);
+      } else {
+        alert(`Failed to save: ${errorMessage}\n\nCheck the browser console (F12) for more details.`);
+      }
     }
   }
 
@@ -104,9 +170,10 @@ export default function Settings({ userId }: SettingsProps) {
           onClick={handleSave} 
           size="sm" 
           className="bg-orange-500 hover:bg-orange-600 text-white"
+          disabled={saving}
         >
           <Save className="w-4 h-4 mr-2" />
-          Save Changes
+          {saving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
 

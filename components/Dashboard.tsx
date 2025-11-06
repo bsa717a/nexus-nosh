@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MapPin, Star, Users, Filter, Clock, User } from 'lucide-react';
+import { MapPin, Star, Users, Filter, Clock, User, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
+import { useAuth } from '@/lib/auth/useAuth';
 
 interface DashboardProps {
   userId: string;
@@ -16,6 +18,8 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ userId, userLocation, userName = 'Derek' }: DashboardProps) {
+  const { signOut } = useAuth();
+  const router = useRouter();
   const [recommendations, setRecommendations] = useState<RestaurantRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [tasteProfile, setTasteProfile] = useState<any>(null);
@@ -72,7 +76,25 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
 
   return (
     <div className="p-6 space-y-8 bg-gradient-to-b from-orange-50 to-white min-h-screen pb-24">
-      <header className="text-center">
+      <header className="text-center relative">
+        <div className="absolute top-0 right-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                await signOut();
+                router.push('/login');
+              } catch (error) {
+                console.error('Error signing out:', error);
+              }
+            }}
+            className="text-gray-600 hover:text-gray-900"
+          >
+            <LogOut className="w-4 h-4 mr-1" />
+            Sign Out
+          </Button>
+        </div>
         <h1 className="text-3xl font-bold mb-2">Nexus Nosh</h1>
         <p className="text-gray-600">Smart lunch pairings for business and pleasure</p>
       </header>
