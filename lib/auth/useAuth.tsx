@@ -7,7 +7,7 @@ import {
   onAuthStateChanged,
   updateProfile
 } from 'firebase/auth';
-import { auth } from '@/lib/firebase/config';
+import { getFirebaseAuth, initializeFirebase } from '@/lib/firebase/config';
 
 interface AuthContextType {
   user: User | null;
@@ -24,18 +24,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const setupAuthListener = (authInstance: typeof auth) => {
-      if (!authInstance) {
-        console.error('[useAuth] No auth instance provided');
-        setLoading(false);
-        return () => {};
-      }
-
+    // Ensure Firebase is initialized
+    try {
+      initializeFirebase();
+      const authInstance = getFirebaseAuth();
+      
+      console.log('[useAuth] Setting up auth state listener');
+      
       let timeoutId: NodeJS.Timeout;
       const unsubscribe = onAuthStateChanged(
         authInstance,
         (user) => {
           clearTimeout(timeoutId);
+          console.log('[useAuth] Auth state changed:', user ? `User: ${user.email}` : 'No user');
           setUser(user);
           setLoading(false);
         },
@@ -56,39 +57,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(timeoutId);
         unsubscribe();
       };
-    };
-
-    // Check if auth is available immediately
-    if (auth) {
-      console.log('[useAuth] Auth available, setting up listener');
-      return setupAuthListener(auth);
+    } catch (error) {
+      console.error('[useAuth] Failed to initialize Firebase Auth:', error);
+      setLoading(false);
+      return () => {};
     }
-
-    // If not available, wait a bit and try again (for module loading timing)
-    console.warn('[useAuth] Auth not immediately available, retrying...');
-    const retryTimeout = setTimeout(() => {
-      if (auth) {
-        console.log('[useAuth] Auth found on retry');
-        setupAuthListener(auth);
-      } else {
-        console.error('[useAuth] Auth still not available after retry');
-        setLoading(false);
-      }
-    }, 100);
-
-    return () => {
-      clearTimeout(retryTimeout);
-    };
   }, []);
 
   async function signIn(email: string, password: string) {
-    if (!auth) throw new Error('Firebase Auth not initialized');
-    await signInWithEmailAndPassword(auth, email, password);
+    const authInstance = getFirebaseAuth();
+    await signInWithEmailAndPassword(authInstance, email, password);
   }
 
   async function signUp(email: string, password: string, displayName: string): Promise<User> {
-    if (!auth) throw new Error('Firebase Auth not initialized');
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const authInstance = getFirebaseAuth();
+    const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
     // Update display name
     if (displayName && userCredential.user) {
       await updateProfile(userCredential.user, { displayName });
@@ -97,8 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
-    if (!auth) throw new Error('Firebase Auth not initialized');
-    await firebaseSignOut(auth);
+    const authInstance = getFirebaseAuth();
+    await firebaseSignOut(authInstance);
   }
 
   return (

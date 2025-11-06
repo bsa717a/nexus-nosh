@@ -1,4 +1,4 @@
-import { db, isFirebaseConfigured, auth } from '@/lib/firebase/config';
+import { getFirebaseDb, getFirebaseAuth, isFirebaseConfigured } from '@/lib/firebase/config';
 import {
   collection,
   doc,
@@ -19,7 +19,7 @@ const RATINGS_COLLECTION = 'ratings';
  * Get or create a taste profile for a user
  */
 export async function getTasteProfile(userId: string): Promise<TasteProfile | null> {
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured) {
     console.warn('Firebase not configured. Returning default profile.');
     return {
       userId,
@@ -41,8 +41,7 @@ export async function getTasteProfile(userId: string): Promise<TasteProfile | nu
   }
   
   try {
-  // Network is already enabled in config.ts, no need to enable again
-    
+    const db = getFirebaseDb();
     const profileRef = doc(db, TASTE_PROFILES_COLLECTION, userId);
     const profileSnap = await getDoc(profileRef);
     
@@ -84,12 +83,13 @@ export async function updateTasteProfileFromRating(
   userId: string, 
   rating: Rating
 ): Promise<void> {
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured) {
     console.warn('Firebase not configured. Cannot update taste profile.');
     return;
   }
   
   try {
+    const db = getFirebaseDb();
     const profile = await getTasteProfile(userId);
     if (!profile) return;
 
@@ -167,13 +167,10 @@ export async function updateTasteProfile(
     console.error('[updateTasteProfile] Firebase not configured!');
     throw new Error('Firebase is not configured');
   }
-  
-  if (!db) {
-    console.error('[updateTasteProfile] Firestore database not initialized!');
-    throw new Error('Firestore database not initialized');
-  }
 
   try {
+    const db = getFirebaseDb();
+    const auth = getFirebaseAuth();
     const profileRef = doc(db, TASTE_PROFILES_COLLECTION, userId);
     console.log('[updateTasteProfile] Document reference created:', profileRef.path);
     
@@ -284,7 +281,7 @@ export async function calculateOverlapScore(
   userId1: string, 
   userId2: string
 ): Promise<number> {
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured) {
     return 0;
   }
   

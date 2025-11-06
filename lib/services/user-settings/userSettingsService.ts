@@ -1,4 +1,4 @@
-import { db, isFirebaseConfigured, auth } from '@/lib/firebase/config';
+import { getFirebaseDb, getFirebaseAuth, isFirebaseConfigured } from '@/lib/firebase/config';
 import {
   doc,
   getDoc,
@@ -13,7 +13,7 @@ const USER_SETTINGS_COLLECTION = 'userSettings';
  * Get user settings (notifications, etc.)
  */
 export async function getUserSettings(userId: string): Promise<UserSettings | null> {
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured) {
     console.warn('Firebase not configured. Returning default settings.');
     return {
       userId,
@@ -28,8 +28,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
   }
 
   try {
-  // Network is already enabled in config.ts, no need to enable again
-    
+    const db = getFirebaseDb();
     const settingsRef = doc(db, USER_SETTINGS_COLLECTION, userId);
     const settingsSnap = await getDoc(settingsRef);
     
@@ -64,12 +63,13 @@ export async function updateUserSettings(
   userId: string,
   settings: Partial<UserSettings>
 ): Promise<void> {
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured) {
     console.warn('Firebase not configured. Cannot update user settings.');
     return;
   }
 
   try {
+    const db = getFirebaseDb();
     const settingsRef = doc(db, USER_SETTINGS_COLLECTION, userId);
     const settingsSnap = await getDoc(settingsRef);
     
@@ -114,13 +114,10 @@ export async function updateNotificationSettings(
     console.error('[updateNotificationSettings] Firebase not configured!');
     throw new Error('Firebase is not configured');
   }
-  
-  if (!db) {
-    console.error('[updateNotificationSettings] Firestore database not initialized!');
-    throw new Error('Firestore database not initialized');
-  }
 
   try {
+    const db = getFirebaseDb();
+    const auth = getFirebaseAuth();
     const settingsRef = doc(db, USER_SETTINGS_COLLECTION, userId);
     console.log('[updateNotificationSettings] Document reference created:', settingsRef.path);
     

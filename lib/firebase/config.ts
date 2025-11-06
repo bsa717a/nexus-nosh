@@ -42,37 +42,20 @@ let db: Firestore | undefined;
 let auth: Auth | undefined;
 let storage: FirebaseStorage | undefined;
 
-// Initialize Firebase immediately if in browser
-if (typeof window !== 'undefined') {
+// Function to ensure Firebase is initialized
+function initializeFirebase() {
+  // Only initialize in browser
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  // If already initialized, return
+  if (app && auth && db) {
+    return;
+  }
+
   try {
-    if (isFirebaseConfigured) {
-      if (!getApps().length) {
-        app = initializeApp(firebaseConfig);
-        console.log('[Firebase] App initialized');
-      } else {
-        app = getApps()[0];
-        console.log('[Firebase] Using existing app');
-      }
-      
-      db = getFirestore(app);
-      auth = getAuth(app);
-      storage = getStorage(app);
-
-      console.log('[Firebase] Services initialized:', {
-        hasDb: !!db,
-        hasAuth: !!auth,
-        hasStorage: !!storage,
-        projectId: firebaseConfig.projectId,
-        apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing'
-      });
-
-      // Try to ensure network is enabled (async, fire and forget)
-      enableNetwork(db).then(() => {
-        console.log('[Firebase] ✓ Firestore network enabled');
-      }).catch((error) => {
-        console.warn('[Firebase] Could not enable Firestore network:', error);
-      });
-    } else {
+    if (!isFirebaseConfigured) {
       console.error('[Firebase] Not configured. Missing or invalid credentials:', {
         hasApiKey: !!firebaseConfig.apiKey,
         hasProjectId: !!firebaseConfig.projectId,
@@ -80,7 +63,35 @@ if (typeof window !== 'undefined') {
         projectId: firebaseConfig.projectId || 'missing',
         config: firebaseConfig
       });
+      return;
     }
+
+    if (!getApps().length) {
+      app = initializeApp(firebaseConfig);
+      console.log('[Firebase] App initialized');
+    } else {
+      app = getApps()[0];
+      console.log('[Firebase] Using existing app');
+    }
+    
+    db = getFirestore(app);
+    auth = getAuth(app);
+    storage = getStorage(app);
+
+    console.log('[Firebase] Services initialized:', {
+      hasDb: !!db,
+      hasAuth: !!auth,
+      hasStorage: !!storage,
+      projectId: firebaseConfig.projectId,
+      apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing'
+    });
+
+    // Try to ensure network is enabled (async, fire and forget)
+    enableNetwork(db).then(() => {
+      console.log('[Firebase] ✓ Firestore network enabled');
+    }).catch((error) => {
+      console.warn('[Firebase] Could not enable Firestore network:', error);
+    });
   } catch (error) {
     console.error('[Firebase] Initialization failed:', error);
     console.error('[Firebase] Error details:', {
@@ -88,8 +99,36 @@ if (typeof window !== 'undefined') {
       stack: (error as Error).stack
     });
   }
-} else {
-  console.log('[Firebase] Server-side: Skipping initialization');
 }
 
-export { app, db, auth, storage, isFirebaseConfigured };
+// Initialize immediately if in browser
+if (typeof window !== 'undefined') {
+  initializeFirebase();
+}
+
+// Export getter functions that ensure initialization
+export function getFirebaseAuth(): Auth {
+  if (typeof window === 'undefined') {
+    throw new Error('Firebase Auth can only be used in the browser');
+  }
+  initializeFirebase();
+  if (!auth) {
+    throw new Error('Firebase Auth not initialized. Check Firebase configuration.');
+  }
+  return auth;
+}
+
+export function getFirebaseDb(): Firestore {
+  if (typeof window === 'undefined') {
+    throw new Error('Firestore can only be used in the browser');
+  }
+  initializeFirebase();
+  if (!db) {
+    throw new Error('Firestore not initialized. Check Firebase configuration.');
+  }
+  return db;
+}
+
+// Export the variables directly (for backward compatibility)
+// But also export getters that ensure initialization
+export { app, db, auth, storage, isFirebaseConfigured, initializeFirebase };
