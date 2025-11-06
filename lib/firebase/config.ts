@@ -42,42 +42,54 @@ let db: Firestore | undefined;
 let auth: Auth | undefined;
 let storage: FirebaseStorage | undefined;
 
+// Initialize Firebase immediately if in browser
 if (typeof window !== 'undefined') {
-  if (isFirebaseConfigured) {
-    try {
+  try {
+    if (isFirebaseConfigured) {
       if (!getApps().length) {
         app = initializeApp(firebaseConfig);
+        console.log('[Firebase] App initialized');
       } else {
         app = getApps()[0];
+        console.log('[Firebase] Using existing app');
       }
+      
       db = getFirestore(app);
       auth = getAuth(app);
       storage = getStorage(app);
 
-      // Try to ensure network is enabled (async, fire and forget)
-      enableNetwork(db).then(() => {
-        console.log('✓ Firestore network enabled');
-      }).catch((error) => {
-        console.warn('Could not enable Firestore network:', error);
-      });
-
-      console.log('Firebase initialized:', {
+      console.log('[Firebase] Services initialized:', {
         hasDb: !!db,
         hasAuth: !!auth,
+        hasStorage: !!storage,
         projectId: firebaseConfig.projectId,
         apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing'
       });
-    } catch (error) {
-      console.error('Firebase initialization failed:', error);
+
+      // Try to ensure network is enabled (async, fire and forget)
+      enableNetwork(db).then(() => {
+        console.log('[Firebase] ✓ Firestore network enabled');
+      }).catch((error) => {
+        console.warn('[Firebase] Could not enable Firestore network:', error);
+      });
+    } else {
+      console.error('[Firebase] Not configured. Missing or invalid credentials:', {
+        hasApiKey: !!firebaseConfig.apiKey,
+        hasProjectId: !!firebaseConfig.projectId,
+        apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing',
+        projectId: firebaseConfig.projectId || 'missing',
+        config: firebaseConfig
+      });
     }
-  } else {
-    console.warn('Firebase not configured. Missing or invalid credentials:', {
-      hasApiKey: !!firebaseConfig.apiKey,
-      hasProjectId: !!firebaseConfig.projectId,
-      apiKey: firebaseConfig.apiKey ? `${firebaseConfig.apiKey.substring(0, 10)}...` : 'missing',
-      projectId: firebaseConfig.projectId || 'missing'
+  } catch (error) {
+    console.error('[Firebase] Initialization failed:', error);
+    console.error('[Firebase] Error details:', {
+      message: (error as Error).message,
+      stack: (error as Error).stack
     });
   }
+} else {
+  console.log('[Firebase] Server-side: Skipping initialization');
 }
 
 export { app, db, auth, storage, isFirebaseConfigured };

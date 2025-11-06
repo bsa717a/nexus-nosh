@@ -24,43 +24,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth) {
-      console.error('[useAuth] Firebase Auth not initialized. Check Firebase config.');
-      console.error('[useAuth] Auth object:', auth);
-      console.error('[useAuth] Available env vars:', {
-        hasApiKey: !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-        hasProjectId: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-        apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? `${process.env.NEXT_PUBLIC_FIREBASE_API_KEY.substring(0, 10)}...` : 'MISSING',
-        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'MISSING'
-      });
-      setLoading(false);
-      return;
+    const setupAuthListener = (authInstance: typeof auth) => {
+      if (!authInstance) {
+        console.error('[useAuth] No auth instance provided');
+        setLoading(false);
+        return () => {};
+      }
+
+      let timeoutId: NodeJS.Timeout;
+      const unsubscribe = onAuthStateChanged(
+        authInstance,
+        (user) => {
+          clearTimeout(timeoutId);
+          setUser(user);
+          setLoading(false);
+        },
+        (error) => {
+          console.error('[useAuth] Auth state change error:', error);
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
+      );
+
+      // Safety timeout - if auth doesn't resolve in 5 seconds, stop loading
+      timeoutId = setTimeout(() => {
+        console.warn('[useAuth] Auth state check timeout - proceeding without auth');
+        setLoading(false);
+      }, 5000);
+
+      return () => {
+        clearTimeout(timeoutId);
+        unsubscribe();
+      };
+    };
+
+    // Check if auth is available immediately
+    if (auth) {
+      console.log('[useAuth] Auth available, setting up listener');
+      return setupAuthListener(auth);
     }
 
-    let timeoutId: NodeJS.Timeout;
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      (user) => {
-        clearTimeout(timeoutId);
-        setUser(user);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Auth state change error:', error);
-        clearTimeout(timeoutId);
+    // If not available, wait a bit and try again (for module loading timing)
+    console.warn('[useAuth] Auth not immediately available, retrying...');
+    const retryTimeout = setTimeout(() => {
+      if (auth) {
+        console.log('[useAuth] Auth found on retry');
+        setupAuthListener(auth);
+      } else {
+        console.error('[useAuth] Auth still not available after retry');
         setLoading(false);
       }
-    );
-
-    // Safety timeout - if auth doesn't resolve in 5 seconds, stop loading
-    timeoutId = setTimeout(() => {
-      console.warn('Auth state check timeout - proceeding without auth');
-      setLoading(false);
-    }, 5000);
+    }, 100);
 
     return () => {
-      clearTimeout(timeoutId);
-      unsubscribe();
+      clearTimeout(retryTimeout);
     };
   }, []);
 
