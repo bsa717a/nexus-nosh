@@ -25,7 +25,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!auth) {
-      console.warn('Firebase Auth not initialized');
+      console.error('[useAuth] Firebase Auth not initialized. Check Firebase config.');
+      console.error('[useAuth] Auth object:', auth);
+      console.error('[useAuth] Available env vars:', {
+        hasApiKey: !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+        hasProjectId: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? `${process.env.NEXT_PUBLIC_FIREBASE_API_KEY.substring(0, 10)}...` : 'MISSING',
+        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'MISSING'
+      });
       setLoading(false);
       return;
     }
