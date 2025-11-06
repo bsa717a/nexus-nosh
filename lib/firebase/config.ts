@@ -123,9 +123,14 @@ function initializeFirebase() {
   }
 }
 
-// Initialize immediately if in browser
+// Initialize immediately if in browser (but don't throw on failure - let getters handle it)
 if (typeof window !== 'undefined') {
-  initializeFirebase();
+  try {
+    initializeFirebase();
+  } catch (error) {
+    // Don't throw here - initialization will be retried when getters are called
+    console.warn('[Firebase] Initial module load initialization failed, will retry on first use:', error);
+  }
 }
 
 // Export getter functions that ensure initialization
