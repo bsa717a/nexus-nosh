@@ -15,6 +15,13 @@ service cloud.firestore {
     match /userSettings/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // User-specific restaurant state (notes, personal rating, lists)
+    match /userRestaurants/{docId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
     
     // Restaurants are public read, authenticated users can write (for seeding)
     // TODO: Restrict writes to admin users only in production

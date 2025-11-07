@@ -8,6 +8,10 @@ export interface User {
   updatedAt: Date;
 }
 
+export interface UserViewPreferences {
+  restaurantsListView: boolean;
+}
+
 export interface UserSettings {
   userId: string;
   notifications: {
@@ -16,6 +20,18 @@ export interface UserSettings {
     friendRecommendations: boolean;
     meetingReminders: boolean;
   };
+  viewPreferences?: UserViewPreferences;
+  updatedAt: Date;
+}
+
+export interface UserRestaurantState {
+  userId: string;
+  restaurantId: string;
+  wantToGo: boolean;
+  hasBeen: boolean;
+  personalRating?: number; // 1-5
+  notes?: string;
+  zipCode?: string;
   updatedAt: Date;
 }
 
