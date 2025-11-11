@@ -158,9 +158,10 @@ export interface Meeting {
 // Recommendation Types
 export interface RestaurantRecommendation {
   restaurant: Restaurant;
-  score: number;
+  matchScore?: number;
+  score?: number; // deprecated, use matchScore
   reasons: string[];
-  matchType: 'personal-favorite' | 'friend-recommendation' | 'smart-match' | 'trending';
+  matchType: 'personal-favorite' | 'friend-recommendation' | 'smart-match' | 'trending' | 'all-restaurants';
   friendRecommendations?: {
     userId: string;
     userName: string;

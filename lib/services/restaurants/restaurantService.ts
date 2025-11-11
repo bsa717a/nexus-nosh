@@ -1,4 +1,4 @@
-import { db, isFirebaseConfigured } from '@/lib/firebase/config';
+import { getFirebaseDb, isFirebaseConfigured } from '@/lib/firebase/config';
 import {
   collection,
   doc,
@@ -17,6 +17,7 @@ const RESTAURANTS_COLLECTION = 'restaurants';
  * Get a single restaurant by ID
  */
 export async function getRestaurant(restaurantId: string): Promise<Restaurant | null> {
+  const db = getFirebaseDb();
   if (!isFirebaseConfigured || !db) {
     console.error('Firebase not configured or DB not initialized!');
     return null;
@@ -67,12 +68,14 @@ export async function getAllRestaurants(
   limitCount: number = 100,
   cuisineType?: string
 ): Promise<Restaurant[]> {
+  const db = getFirebaseDb();
   if (!isFirebaseConfigured || !db) {
-    console.error('Firebase not configured or DB not initialized!');
+    console.error('[restaurantService] Firebase not configured or DB not initialized!');
     return [];
   }
 
   try {
+    console.log('[restaurantService] Fetching all restaurants, limit:', limitCount);
     let restaurantsQuery;
     
     if (cuisineType) {
@@ -89,12 +92,15 @@ export async function getAllRestaurants(
     }
 
     const snapshot = await getDocs(restaurantsQuery);
-    return snapshot.docs.map(doc => ({
+    const restaurants = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
     })) as Restaurant[];
+    
+    console.log('[restaurantService] Fetched restaurants:', restaurants.length, restaurants);
+    return restaurants;
   } catch (error) {
-    console.error('Error getting restaurants:', error);
+    console.error('[restaurantService] Error getting restaurants:', error);
     return [];
   }
 }
@@ -117,6 +123,11 @@ export async function getRestaurantsNearLocation(
   radiusKm: number = 5,
   limitCount: number = 20
 ): Promise<Restaurant[]> {
+  const db = getFirebaseDb();
+  if (!db) {
+    return [];
+  }
+  
   // For now, return all restaurants
   // In production, you'd use geohash or geospatial queries
   const allRestaurants = await getAllRestaurants(limitCount);

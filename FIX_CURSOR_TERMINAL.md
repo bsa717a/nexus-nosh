@@ -33,11 +33,12 @@ Create or edit `~/.cursor/settings.json` (or use Settings UI):
 
 ```json
 {
-  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.defaultProfile.osx": "zsh (Login Shell)",
   "terminal.integrated.profiles.osx": {
-    "zsh": {
+    "zsh (Login Shell)": {
       "path": "/bin/zsh",
-      "args": ["-l"]
+      "args": ["-l"],
+      "icon": "terminal"
     },
     "bash": {
       "path": "/bin/bash",

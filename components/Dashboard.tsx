@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/Button';
 import { MapPin, Star, Users, Filter, Clock, User, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
-import { RestaurantRecommendation } from '@/lib/types';
+import { Restaurant, RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
+import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
 import { useAuth } from '@/lib/auth/useAuth';
-import MapView from '@/components/MapView';
+import MapView, { MapViewHandle } from '@/components/MapView';
 
 interface DashboardProps {
   userId: string;
@@ -21,7 +22,9 @@ interface DashboardProps {
 export default function Dashboard({ userId, userLocation, userName = 'Derek' }: DashboardProps) {
   const { signOut } = useAuth();
   const router = useRouter();
+  const mapRef = useRef<MapViewHandle>(null);
   const [recommendations, setRecommendations] = useState<RestaurantRecommendation[]>([]);
+  const [allRestaurants, setAllRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [tasteProfile, setTasteProfile] = useState<any>(null);
 
@@ -32,15 +35,18 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   async function loadData() {
     setLoading(true);
     try {
-      console.log('[Dashboard] Loading recommendations for user:', userId);
-      const [recs, profile] = await Promise.all([
+      console.log('[Dashboard] Loading data for user:', userId);
+      const [recs, profile, restaurants] = await Promise.all([
         getPersonalizedRecommendations(userId, userLocation),
         getTasteProfile(userId),
+        getAllRestaurants(100),
       ]);
       console.log('[Dashboard] Recommendations loaded:', recs.length, recs);
       console.log('[Dashboard] Taste profile loaded:', profile);
+      console.log('[Dashboard] All restaurants loaded:', restaurants.length, restaurants);
       setRecommendations(recs);
       setTasteProfile(profile);
+      setAllRestaurants(restaurants);
     } catch (error) {
       console.error('[Dashboard] Error loading data:', error);
     } finally {
@@ -65,18 +71,81 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     { trait: 'Value', score: 75 },
   ];
 
-  // Top picks (favorites)
-  const topPicks = recommendations
-    .filter(r => r.matchType === 'personal-favorite')
+  // Top picks - top 3 UNIQUE recommendations with slight randomization for variety
+  // Use date as seed so recommendations change daily but stay consistent within the day
+  const getDailySeed = () => {
+    const today = new Date();
+    return today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+  };
+  
+  // Create a Set to track unique restaurant IDs
+  const seenIds = new Set<string>();
+  const uniqueRecs = recommendations.filter((rec) => {
+    if (seenIds.has(rec.restaurant.id)) {
+      console.log('[Dashboard] Filtering duplicate:', rec.restaurant.name, rec.restaurant.id);
+      return false;
+    }
+    seenIds.add(rec.restaurant.id);
+    return true;
+  });
+  
+  console.log('[Dashboard] Unique recommendations:', uniqueRecs.length, 'from', recommendations.length);
+  
+  const topPicks = uniqueRecs
+    .map(rec => ({
+      ...rec,
+      // Add small random boost based on daily seed for variety (±5%)
+      adjustedScore: (rec.matchScore || rec.score || 0) + ((getDailySeed() % rec.restaurant.name.length) - 2.5)
+    }))
+    .sort((a, b) => b.adjustedScore - a.adjustedScore)
     .slice(0, 3);
+    
+  console.log('[Dashboard] Top 3 picks:', topPicks.map(p => ({ name: p.restaurant.name, id: p.restaurant.id, score: p.adjustedScore })));
 
   // Friend recommendations
   const friendPicks = recommendations
     .filter(r => r.matchType === 'friend-recommendation')
-    .slice(0, 2);
+    .slice(0, 1);
 
-  // Nearby picks for map section
-  const nearbyPicks = recommendations.slice(0, 3);
+  // Personal preference match (not in top 3)
+  const personalMatch = recommendations
+    .filter(r => r.matchType === 'smart-match' || r.matchType === 'personal-favorite')
+    .filter(r => !topPicks.find(tp => tp.restaurant.id === r.restaurant.id))
+    .slice(0, 1)[0];
+
+  // Nearby picks for map section - get top 3 unique restaurants (different from top picks)
+  const nearbyPicksSet = new Set(topPicks.map(tp => tp.restaurant.id));
+  const nearbyPicks = recommendations
+    .filter(r => !nearbyPicksSet.has(r.restaurant.id))
+    .slice(0, 3);
+  
+  // Get match type icon/color
+  const getMatchIcon = (matchType: string) => {
+    switch (matchType) {
+      case 'personal-favorite':
+        return { icon: Star, color: 'text-orange-500', fillColor: 'fill-orange-500' };
+      case 'friend-recommendation':
+        return { icon: Users, color: 'text-blue-500', fillColor: 'fill-blue-500' };
+      case 'smart-match':
+        return { icon: Star, color: 'text-green-500', fillColor: 'fill-green-500' };
+      case 'trending':
+        return { icon: Star, color: 'text-purple-500', fillColor: 'fill-purple-500' };
+      default:
+        return { icon: Star, color: 'text-yellow-500', fillColor: 'fill-yellow-500' };
+    }
+  };
+
+  // Handle restaurant card click - focus on map
+  const handleRestaurantClick = (restaurantId: string) => {
+    console.log('[Dashboard] Restaurant card clicked:', restaurantId);
+    console.log('[Dashboard] mapRef.current:', mapRef.current);
+    if (mapRef.current) {
+      console.log('[Dashboard] Calling focusRestaurant');
+      mapRef.current.focusRestaurant(restaurantId);
+    } else {
+      console.error('[Dashboard] mapRef.current is null!');
+    }
+  };
 
   return (
     <div className="p-6 space-y-8 bg-gradient-to-b from-orange-50 to-white min-h-screen pb-24">
@@ -121,29 +190,44 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               </div>
             ) : topPicks.length > 0 ? (
               <div className="grid md:grid-cols-3 gap-4">
-                {topPicks.map((rec) => (
-                  <Card key={rec.restaurant.id} className="rounded-xl shadow-sm border p-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="font-semibold">{rec.restaurant.name}</span>
-                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                    </div>
-                    <p className="text-gray-500 text-sm">
-                      {rec.reasons[0] || 'Perfect for business lunches'}
-                    </p>
-                  </Card>
-                ))}
+                {topPicks.map((rec, index) => {
+                  const matchIcon = getMatchIcon(rec.matchType);
+                  const IconComponent = matchIcon.icon;
+                  return (
+                    <Card key={`${rec.restaurant.id}-${index}`} className="rounded-xl shadow-sm border p-3 hover:shadow-md transition-shadow cursor-pointer">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-gray-800">{rec.restaurant.name}</span>
+                        <IconComponent className={`w-4 h-4 ${matchIcon.color} ${matchIcon.fillColor}`} />
+                      </div>
+                      <p className="text-gray-500 text-xs mb-1">
+                        {rec.restaurant.cuisineType.slice(0, 2).join(' • ')}
+                      </p>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.restaurant.address)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-xs mb-2 flex items-start hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                        <span>{rec.restaurant.address}</span>
+                      </a>
+                      <p className="text-gray-600 text-sm font-medium">
+                        {rec.reasons[0] || 'Great match for your preferences'}
+                      </p>
+                      {rec.matchScore && (
+                        <div className="mt-2 text-xs text-gray-400">
+                          Match: {Math.round(rec.matchScore)}%
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
               </div>
             ) : (
-              <div className="grid md:grid-cols-3 gap-4">
-                {['Cliffside Restaurant', 'Wood Ash Rye', 'Painted Pony'].map((r) => (
-                  <Card key={r} className="rounded-xl shadow-sm border p-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="font-semibold">{r}</span>
-                      <Star className="w-4 h-4 text-yellow-500" />
-                    </div>
-                    <p className="text-gray-500 text-sm">Perfect for business lunches</p>
-                  </Card>
-                ))}
+              <div className="text-center py-8 text-gray-500">
+                <p className="mb-2">No recommendations yet!</p>
+                <p className="text-sm">Rate some restaurants to get personalized suggestions.</p>
               </div>
             )}
           </CardContent>
@@ -166,54 +250,79 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               </Button>
             </div>
             <div className="grid md:grid-cols-2 gap-4">
-              {recommendations.length > 0 && recommendations[0] ? (
-                <>
-                  <Card className="p-3 border rounded-xl">
-                    <div className="flex items-center mb-2">
-                      <MapPin className="w-4 h-4 mr-2 text-orange-500" />
-                      <span className="font-semibold">{recommendations[0].restaurant.name}</span>
+              {/* Personal Preference Match */}
+              {personalMatch ? (
+                <Card className="p-4 border rounded-xl hover:shadow-md transition-shadow">
+                  <div className="flex items-center mb-2">
+                    <Star className="w-5 h-5 mr-2 text-orange-500 fill-orange-500" />
+                    <span className="font-semibold text-gray-800">{personalMatch.restaurant.name}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">
+                    {personalMatch.restaurant.cuisineType.slice(0, 2).join(' • ')}
+                  </p>
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(personalMatch.restaurant.address)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 text-xs mb-2 flex items-start hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                    <span>{personalMatch.restaurant.address}</span>
+                  </a>
+                  <p className="text-sm text-gray-600 font-medium mt-2">
+                    {personalMatch.reasons[0] || 'Great match for your preferences'}
+                  </p>
+                  {personalMatch.matchScore && (
+                    <div className="mt-2 text-xs text-gray-400">
+                      Match: {Math.round(personalMatch.matchScore)}%
                     </div>
-                    <p className="text-sm text-gray-500">
-                      {recommendations[0].reasons[0] || 'Great match for your preferences'}
-                    </p>
-                  </Card>
-                  {friendPicks.length > 0 ? (
-                    <Card className="p-3 border rounded-xl">
-                      <div className="flex items-center mb-2">
-                        <Users className="w-4 h-4 mr-2 text-blue-500" />
-                        <span className="font-semibold">Friend Picks</span>
-                      </div>
-                      <p className="text-sm text-gray-500">
-                        {friendPicks[0].friendRecommendations?.[0]?.userName || 'Friends'} rated '{friendPicks[0].restaurant.name}' highly
-                      </p>
-                    </Card>
-                  ) : (
-                    <Card className="p-3 border rounded-xl">
-                      <div className="flex items-center mb-2">
-                        <Users className="w-4 h-4 mr-2 text-blue-500" />
-                        <span className="font-semibold">Friend Picks</span>
-                      </div>
-                      <p className="text-sm text-gray-500">Machell and Adam both rated 'Farmstead' 9/10</p>
-                    </Card>
                   )}
-                </>
+                </Card>
               ) : (
-                <>
-                  <Card className="p-3 border rounded-xl">
-                    <div className="flex items-center mb-2">
-                      <MapPin className="w-4 h-4 mr-2 text-orange-500" />
-                      <span className="font-semibold">George's Corner</span>
-                    </div>
-                    <p className="text-sm text-gray-500">Energetic casual spot for quick team lunches</p>
-                  </Card>
-                  <Card className="p-3 border rounded-xl">
-                    <div className="flex items-center mb-2">
-                      <Users className="w-4 h-4 mr-2 text-blue-500" />
-                      <span className="font-semibold">Friend Picks</span>
-                    </div>
-                    <p className="text-sm text-gray-500">Machell and Adam both rated 'Farmstead' 9/10</p>
-                  </Card>
-                </>
+                <Card className="p-4 border rounded-xl bg-gray-50">
+                  <div className="flex items-center mb-2">
+                    <Star className="w-5 h-5 mr-2 text-orange-500" />
+                    <span className="font-semibold text-gray-600">Personal Match</span>
+                  </div>
+                  <p className="text-sm text-gray-500">Rate more restaurants to get personalized matches</p>
+                </Card>
+              )}
+
+              {/* Friend Pick */}
+              {friendPicks.length > 0 ? (
+                <Card className="p-4 border rounded-xl hover:shadow-md transition-shadow">
+                  <div className="flex items-center mb-2">
+                    <Users className="w-5 h-5 mr-2 text-blue-500 fill-blue-500" />
+                    <span className="font-semibold text-gray-800">{friendPicks[0].restaurant.name}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">
+                    {friendPicks[0].restaurant.cuisineType.slice(0, 2).join(' • ')}
+                  </p>
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(friendPicks[0].restaurant.address)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 text-xs mb-2 flex items-start hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                    <span>{friendPicks[0].restaurant.address}</span>
+                  </a>
+                  <p className="text-sm text-gray-600 font-medium mt-2">
+                    {friendPicks[0].friendRecommendations && friendPicks[0].friendRecommendations.length > 0
+                      ? `${friendPicks[0].friendRecommendations[0].userName} recommends this`
+                      : 'Recommended by friends'}
+                  </p>
+                </Card>
+              ) : (
+                <Card className="p-4 border rounded-xl bg-gray-50">
+                  <div className="flex items-center mb-2">
+                    <Users className="w-5 h-5 mr-2 text-blue-500" />
+                    <span className="font-semibold text-gray-600">Friend Picks</span>
+                  </div>
+                  <p className="text-sm text-gray-500">Connect with friends to see their favorite spots</p>
+                </Card>
               )}
             </div>
           </CardContent>
@@ -238,32 +347,84 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
             <div className="grid md:grid-cols-3 gap-4">
               <div className="md:col-span-2 rounded-xl overflow-hidden">
                 <MapView 
-                  recommendations={recommendations.slice(0, 10)} 
+                  ref={mapRef}
+                  restaurants={allRestaurants}
                   center={userLocation || { lat: 37.0965, lng: -113.5684 }}
                   height="400px"
                 />
               </div>
               <div className="space-y-3">
                 {nearbyPicks.length > 0 ? (
-                  nearbyPicks.map((rec) => (
-                    <Card key={rec.restaurant.id} className="p-3 border rounded-xl">
-                      <p className="font-semibold">{rec.restaurant.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {rec.restaurant.attributes.atmosphere} • {rec.reasons[0] || 'Recommended'}
+                  nearbyPicks.map((rec) => {
+                    const matchIcon = getMatchIcon(rec.matchType);
+                    const IconComponent = matchIcon.icon;
+                    return (
+                      <div 
+                        key={rec.restaurant.id} 
+                        onClick={() => handleRestaurantClick(rec.restaurant.id)}
+                      >
+                      <Card 
+                        className="p-3 border rounded-xl hover:shadow-md transition-shadow cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between mb-1">
+                          <p className="font-semibold text-gray-800">{rec.restaurant.name}</p>
+                          <IconComponent className={`w-4 h-4 ${matchIcon.color} ${matchIcon.fillColor} flex-shrink-0 ml-2`} />
+                        </div>
+                        <p className="text-xs text-gray-500 mb-1">
+                          {rec.restaurant.cuisineType[0]} • {rec.restaurant.attributes.atmosphere}
+                        </p>
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.restaurant.address)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 text-xs mb-2 flex items-start hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                          <span className="line-clamp-2">{rec.restaurant.address}</span>
+                        </a>
+                        <p className="text-xs text-gray-600">
+                          {rec.reasons[0] || 'Recommended for you'}
+                        </p>
+                        {rec.matchScore && (
+                          <div className="mt-1 text-xs text-gray-400">
+                            {Math.round(rec.matchScore)}% match
+                          </div>
+                        )}
+                      </Card>
+                      </div>
+                    );
+                  })
+                ) : allRestaurants.length > 0 ? (
+                  allRestaurants.slice(0, 3).map((restaurant) => (
+                    <div
+                      key={restaurant.id}
+                      onClick={() => handleRestaurantClick(restaurant.id)}
+                    >
+                    <Card 
+                      className="p-3 border rounded-xl hover:shadow-md transition-shadow cursor-pointer"
+                    >
+                      <p className="font-semibold text-gray-800">{restaurant.name}</p>
+                      <p className="text-xs text-gray-500 mb-1">
+                        {restaurant.cuisineType[0]} • {restaurant.attributes.atmosphere}
                       </p>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurant.address)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-xs flex items-start hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                        <span className="line-clamp-2">{restaurant.address}</span>
+                      </a>
                     </Card>
+                    </div>
                   ))
                 ) : (
-                  [
-                    { name: 'Cliffside', note: 'Quiet • Impress 9/10' },
-                    { name: 'Wood Ash Rye', note: 'Upscale • Service 9/10' },
-                    { name: 'Farmstead', note: 'Friend pick • Value 8/10' },
-                  ].map((i) => (
-                    <Card key={i.name} className="p-3 border rounded-xl">
-                      <p className="font-semibold">{i.name}</p>
-                      <p className="text-sm text-gray-500">{i.note}</p>
-                    </Card>
-                  ))
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">No restaurants available</p>
+                  </div>
                 )}
               </div>
             </div>

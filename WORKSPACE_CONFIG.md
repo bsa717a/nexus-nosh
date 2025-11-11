@@ -1,12 +1,12 @@
 # Workspace Configuration for NexusNosh
 
-This workspace is configured to use **derek.fowler@gmail.com** for all services.
+This workspace is configured to use GitHub user **bsa717a** while keeping Google Cloud / Firebase on **derek.fowler@gmail.com**.
 
 ## Current Configuration
 
 ### Git
-- **Name:** Derek Fowler
-- **Email:** derek.fowler@gmail.com
+- **Name:** bsa717a
+- **Email:** bsa717a@users.noreply.github.com *(update if you prefer a different address)*
 - **Scope:** Repository-specific (stored in `.git/config`)
 
 ### Google Cloud (gcloud)
@@ -33,8 +33,8 @@ If you need to configure manually:
 
 #### Git
 ```bash
-git config --local user.name "Derek Fowler"
-git config --local user.email "derek.fowler@gmail.com"
+git config --local user.name "bsa717a"
+git config --local user.email "bsa717a@users.noreply.github.com"
 ```
 
 #### gcloud

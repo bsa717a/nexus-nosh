@@ -1,6 +1,8 @@
 #!/bin/bash
 # Workspace Setup Script for NexusNosh
-# This script configures this workspace to use derek.fowler@gmail.com for all services
+# This script configures this workspace to use:
+#   GitHub user: bsa717a (noreply email)
+#   gcloud / Firebase: derek.fowler@gmail.com
 
 set -e
 
@@ -9,8 +11,8 @@ echo ""
 
 # 1. Git Configuration (repository-specific)
 echo "📝 Configuring Git..."
-git config --local user.name "Derek Fowler"
-git config --local user.email "derek.fowler@gmail.com"
+git config --local user.name "bsa717a"
+git config --local user.email "bsa717a@users.noreply.github.com"
 echo "✅ Git configured: $(git config --local user.email)"
 echo ""
 

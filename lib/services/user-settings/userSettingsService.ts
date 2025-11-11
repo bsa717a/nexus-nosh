@@ -23,6 +23,9 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
         friendRecommendations: true,
         meetingReminders: true,
       },
+      viewPreferences: {
+        restaurantsListView: false,
+      },
       updatedAt: new Date(),
     };
   }
@@ -44,6 +47,9 @@ export async function getUserSettings(userId: string): Promise<UserSettings | nu
         pushNotifications: true,
         friendRecommendations: true,
         meetingReminders: true,
+      },
+      viewPreferences: {
+        restaurantsListView: false,
       },
       updatedAt: new Date(),
     };
@@ -82,6 +88,9 @@ export async function updateUserSettings(
           pushNotifications: true,
           friendRecommendations: true,
           meetingReminders: true,
+        },
+        viewPreferences: {
+          restaurantsListView: false,
         },
         updatedAt: new Date(),
         ...settings,
@@ -156,6 +165,9 @@ export async function updateNotificationSettings(
         ...(currentSettings?.notifications || {}),
         ...notifications,
       },
+      viewPreferences: {
+        restaurantsListView: currentSettings?.viewPreferences?.restaurantsListView ?? false,
+      },
       updatedAt: Timestamp.now(),
     };
 
@@ -207,6 +219,56 @@ export async function updateNotificationSettings(
     }
     
     throw new Error(`Failed to save: ${error.message || error.code || 'Unknown error'}`);
+  }
+}
+
+export async function updateViewPreferences(
+  userId: string,
+  viewPreferences: Partial<UserSettings['viewPreferences']>
+): Promise<void> {
+  console.log('[updateViewPreferences] Starting...', { userId, viewPreferences });
+
+  if (!isFirebaseConfigured) {
+    console.error('[updateViewPreferences] Firebase not configured!');
+    throw new Error('Firebase is not configured');
+  }
+
+  try {
+    const db = getFirebaseDb();
+    const auth = getFirebaseAuth();
+    const settingsRef = doc(db, USER_SETTINGS_COLLECTION, userId);
+
+    const settingsSnap = await getDoc(settingsRef);
+    const currentSettings = settingsSnap.exists() ? (settingsSnap.data() as UserSettings) : null;
+
+    const { Timestamp } = await import('firebase/firestore');
+
+    const mergedViewPreferences = {
+      restaurantsListView: currentSettings?.viewPreferences?.restaurantsListView ?? false,
+      ...viewPreferences,
+    };
+
+    const updateData: any = {
+      userId,
+      notifications: currentSettings?.notifications ?? {
+        emailNotifications: true,
+        pushNotifications: true,
+        friendRecommendations: true,
+        meetingReminders: true,
+      },
+      viewPreferences: mergedViewPreferences,
+      updatedAt: Timestamp.now(),
+    };
+
+    if (!auth || !auth.currentUser) {
+      throw new Error('User must be authenticated to save view preferences');
+    }
+
+    await setDoc(settingsRef, updateData, { merge: true });
+    console.log('[updateViewPreferences] ✓ Successfully saved view preferences!');
+  } catch (error: any) {
+    console.error('[updateViewPreferences] ✗ Failed to save view preferences:', error);
+    throw error;
   }
 }
 
