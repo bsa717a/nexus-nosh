@@ -8,7 +8,7 @@ import { collection, getDocs, deleteDoc, doc, writeBatch } from 'firebase/firest
 
 export default function CleanRestaurantsPage() {
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [stats, setStats] = useState<{ total: number; unique: number; duplicates: number } | null>(null);
