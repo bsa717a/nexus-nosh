@@ -27,6 +27,29 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const mapRef = useRef<MapRef>(null);
 
+  // Hide POI labels when map loads
+  const onMapLoad = () => {
+    const map = mapRef.current?.getMap();
+    if (map) {
+      // Hide all POI labels (points of interest)
+      const style = map.getStyle();
+      if (style && style.layers) {
+        style.layers.forEach((layer: any) => {
+          // Hide POI labels and icons
+          if (layer.id.includes('poi-label') || 
+              layer.id.includes('poi') || 
+              layer.id.includes('place-label') ||
+              layer.type === 'symbol') {
+            // Only hide if it's a POI or place label, not road labels
+            if (layer.id.includes('poi') || layer.id.includes('place-label')) {
+              map.setLayoutProperty(layer.id, 'visibility', 'none');
+            }
+          }
+        });
+      }
+    }
+  };
+
   // Convert restaurants to display format if provided
   const displayItems = useMemo(() => {
     if (recommendations.length > 0) {
@@ -130,6 +153,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/streets-v12"
         mapboxAccessToken={token}
+        onLoad={onMapLoad}
       >
         <NavigationControl position="top-left" />
         
