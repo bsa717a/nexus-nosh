@@ -285,10 +285,10 @@ export async function getGroupRecommendations(
 
       return {
         ...rec,
-        score: rec.score + groupScore,
+        score: (rec.score ?? 0) + groupScore,
         reasons: reasons.slice(0, 3),
       };
-    }).sort((a, b) => b.score - a.score).slice(0, 10);
+    }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 10);
   } catch (error) {
     console.error('Error getting group recommendations:', error);
     return [];
