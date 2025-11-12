@@ -145,7 +145,7 @@ export default function CleanRestaurantsPage() {
     }
   }
 
-  if (!isAuthenticated) {
+  if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card>
