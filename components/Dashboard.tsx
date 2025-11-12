@@ -94,12 +94,12 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       ? [...dbRestaurants, ...mapboxRestaurants]
       : dbRestaurants;
     
-    console.log('[Dashboard] Combined restaurants:', {
-      db: dbRestaurants.length,
-      mapbox: mapboxRestaurants.length,
-      total: restaurants.length,
-      showMapbox: showMapboxData
-    });
+    console.log('[Dashboard] Combined restaurants:', 
+      'DB:', dbRestaurants.length,
+      'Mapbox:', mapboxRestaurants.length,
+      'Total:', restaurants.length,
+      'ShowMapbox:', showMapboxData
+    );
     
     return restaurants;
   }, [allRestaurants, mapboxRestaurants, showMapboxData]);
@@ -130,8 +130,9 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       console.log('[Dashboard] Sorted by distance from user location');
     }
 
+    console.log('[Dashboard] filteredAndSortedRestaurants count:', filtered.length);
     return filtered;
-  }, [allRestaurants, zipFilter, userLocation]);
+  }, [combinedRestaurants, zipFilter, userLocation]);
 
   // Prepare taste data for radar chart
   const tasteData = tasteProfile ? [
