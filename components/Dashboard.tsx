@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -10,6 +10,7 @@ import { Restaurant, RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
+import { searchMapboxRestaurants } from '@/lib/services/mapbox/mapboxSearchService';
 import { useAuth } from '@/lib/auth/useAuth';
 import MapView, { MapViewHandle } from '@/components/MapView';
 
@@ -25,12 +26,23 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const mapRef = useRef<MapViewHandle>(null);
   const [recommendations, setRecommendations] = useState<RestaurantRecommendation[]>([]);
   const [allRestaurants, setAllRestaurants] = useState<Restaurant[]>([]);
+  const [mapboxRestaurants, setMapboxRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [tasteProfile, setTasteProfile] = useState<any>(null);
+  const [zipFilter, setZipFilter] = useState<string>('');
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | undefined>(userLocation);
+  const [showMapboxData, setShowMapboxData] = useState(true);
 
   useEffect(() => {
     loadData();
   }, [userId, userLocation]);
+
+  // Update map center when userLocation changes
+  useEffect(() => {
+    if (userLocation) {
+      setMapCenter(userLocation);
+    }
+  }, [userLocation]);
 
   async function loadData() {
     setLoading(true);
@@ -47,12 +59,79 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       setRecommendations(recs);
       setTasteProfile(profile);
       setAllRestaurants(restaurants);
+
+      // Load Mapbox restaurants if user location is available
+      if (userLocation) {
+        console.log('[Dashboard] Loading Mapbox restaurants near:', userLocation);
+        const mapboxRests = await searchMapboxRestaurants(userLocation, 10000, 25);
+        console.log('[Dashboard] Mapbox restaurants loaded:', mapboxRests.length, mapboxRests);
+        setMapboxRestaurants(mapboxRests);
+      }
     } catch (error) {
       console.error('[Dashboard] Error loading data:', error);
     } finally {
       setLoading(false);
     }
   }
+
+  // Helper function to calculate distance between two points
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Combine database and Mapbox restaurants
+  const combinedRestaurants = useMemo(() => {
+    const dbRestaurants = allRestaurants;
+    const restaurants = showMapboxData 
+      ? [...dbRestaurants, ...mapboxRestaurants]
+      : dbRestaurants;
+    
+    console.log('[Dashboard] Combined restaurants:', {
+      db: dbRestaurants.length,
+      mapbox: mapboxRestaurants.length,
+      total: restaurants.length,
+      showMapbox: showMapboxData
+    });
+    
+    return restaurants;
+  }, [allRestaurants, mapboxRestaurants, showMapboxData]);
+
+  // Filter and sort restaurants
+  const filteredAndSortedRestaurants = useMemo(() => {
+    let filtered = combinedRestaurants;
+
+    // Apply ZIP code filter if active
+    if (zipFilter.trim()) {
+      filtered = filtered.filter(r => r.address.includes(zipFilter.trim()));
+      console.log('[Dashboard] Filtered by ZIP:', zipFilter, 'Found:', filtered.length);
+    }
+
+    // Sort by distance if user location is available
+    if (userLocation && filtered.length > 0) {
+      filtered = [...filtered].sort((a, b) => {
+        const distA = calculateDistance(
+          userLocation.lat, userLocation.lng,
+          a.coordinates.lat, a.coordinates.lng
+        );
+        const distB = calculateDistance(
+          userLocation.lat, userLocation.lng,
+          b.coordinates.lat, b.coordinates.lng
+        );
+        return distA - distB;
+      });
+      console.log('[Dashboard] Sorted by distance from user location');
+    }
+
+    return filtered;
+  }, [allRestaurants, zipFilter, userLocation]);
 
   // Prepare taste data for radar chart
   const tasteData = tasteProfile ? [
@@ -144,6 +223,34 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       mapRef.current.focusRestaurant(restaurantId);
     } else {
       console.error('[Dashboard] mapRef.current is null!');
+    }
+  };
+
+  // Handle "Near Me" button click
+  const handleNearMeClick = () => {
+    if (navigator.geolocation) {
+      console.log('[Dashboard] Requesting current location...');
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          console.log('[Dashboard] Got current location:', newLocation);
+          setMapCenter(newLocation);
+        },
+        (error) => {
+          console.error('[Dashboard] Error getting current location:', error);
+          alert('Could not get your location. Please enable location services.');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0,
+        }
+      );
+    } else {
+      alert('Geolocation is not supported by your browser');
     }
   };
 
@@ -339,17 +446,38 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
           <CardContent>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Map — Nearby Picks</h2>
-              <Button variant="outline" size="sm">
-                <MapPin className="w-4 h-4 mr-1" />
-                Near Me
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant={showMapboxData ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowMapboxData(!showMapboxData)}
+                  className={showMapboxData ? "bg-orange-500 hover:bg-orange-600 text-white" : ""}
+                >
+                  {showMapboxData ? "All Restaurants" : "My Restaurants"}
+                </Button>
+                <input
+                  type="text"
+                  placeholder="ZIP Code"
+                  value={zipFilter}
+                  onChange={(e) => setZipFilter(e.target.value)}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 w-24"
+                />
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleNearMeClick}
+                >
+                  <MapPin className="w-4 h-4 mr-1" />
+                  Near Me
+                </Button>
+              </div>
             </div>
             <div className="grid md:grid-cols-3 gap-4">
               <div className="md:col-span-2 rounded-xl overflow-hidden">
                 <MapView 
                   ref={mapRef}
-                  restaurants={allRestaurants}
-                  center={userLocation || { lat: 37.0965, lng: -113.5684 }}
+                  restaurants={filteredAndSortedRestaurants}
+                  center={mapCenter || { lat: 37.0965, lng: -113.5684 }}
                   height="400px"
                 />
               </div>

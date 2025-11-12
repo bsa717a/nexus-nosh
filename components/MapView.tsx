@@ -75,7 +75,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
   }));
 
   // Get color based on match type - gray for all restaurants, color for personalized
-  const getMarkerColor = (matchType: string) => {
+  const getMarkerColor = (matchType: string, restaurant: Restaurant) => {
+    // Check if this is a Mapbox restaurant (starts with "mapbox-")
+    const isMapboxRestaurant = restaurant.id.startsWith('mapbox-');
+    
     switch (matchType) {
       case 'personal-favorite':
         return '#ea580c'; // orange-600
@@ -86,7 +89,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
       case 'trending':
         return '#8b5cf6'; // purple-500
       case 'all-restaurants':
-        return '#fb923c'; // orange-400 (all restaurants shown by default)
+        // Different colors for Mapbox vs. database restaurants
+        return isMapboxRestaurant ? '#10b981' : '#fb923c'; // green-500 for Mapbox, orange-400 for database
       default:
         return '#6b7280'; // gray-500
     }
@@ -111,25 +115,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
     );
   }
 
-  if (displayItems.length === 0) {
-    return (
-      <div className="w-full bg-gray-50 border rounded-xl flex items-center justify-center text-gray-600" style={{ height }}>
-        <div className="p-4 text-center">
-          <MapPin className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-          <div className="text-sm font-semibold mb-2">No restaurants to display</div>
-          <div className="text-xs text-gray-500 mb-3">
-            Restaurants need to be seeded first.
-          </div>
-          <a
-            href="/admin/seed-restaurants"
-            className="text-xs text-orange-600 hover:underline"
-          >
-            Go to Seed Restaurants →
-          </a>
-        </div>
-      </div>
-    );
-  }
+  // Always show the map, even if no restaurants match filters
+  // The empty state will be shown inside the map if truly no restaurants exist
 
   return (
     <div className="w-full overflow-hidden rounded-xl border" style={{ height }}>
@@ -146,8 +133,30 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
       >
         <NavigationControl position="top-left" />
         
+        {/* Show message overlay if no restaurants match filters */}
+        {displayItems.length === 0 && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'white',
+            padding: '20px',
+            borderRadius: '8px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            zIndex: 1,
+            textAlign: 'center'
+          }}>
+            <MapPin className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+            <div className="text-sm font-semibold text-gray-800 mb-1">No restaurants found</div>
+            <div className="text-xs text-gray-500">
+              Try adjusting your filters or location
+            </div>
+          </div>
+        )}
+        
         {displayItems.map((item) => {
-          const color = getMarkerColor(item.matchType);
+          const color = getMarkerColor(item.matchType, item.restaurant);
           return (
             <Marker
               key={item.restaurant.id}
@@ -161,8 +170,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                 style={{ color }}
               >
                 <MapPin className="w-8 h-8 fill-current" />
-              </div>
-            </Marker>
+            </div>
+          </Marker>
           );
         })}
 
@@ -177,9 +186,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
             className="mapbox-popup"
           >
             <div className="p-2 min-w-[200px]">
-              <h3 className="font-semibold text-gray-800 mb-1">
-                {selectedRestaurant.name}
-              </h3>
+              <div className="flex items-start justify-between mb-1">
+                <h3 className="font-semibold text-gray-800 flex-1">
+                  {selectedRestaurant.name}
+                </h3>
+                {selectedRestaurant.id.startsWith('mapbox-') && (
+                  <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-full whitespace-nowrap">
+                    Mapbox
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1 text-yellow-500 mb-2">
                 <Star className="w-4 h-4 fill-yellow-500" />
                 <span className="text-sm font-medium">
@@ -209,6 +225,29 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
           </Popup>
         )}
       </Map>
+      
+      {/* Legend for marker colors */}
+      <div style={{
+        position: 'absolute',
+        bottom: '10px',
+        right: '10px',
+        background: 'white',
+        padding: '8px 12px',
+        borderRadius: '6px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        fontSize: '11px',
+        zIndex: 1,
+      }}>
+        <div style={{ fontWeight: 600, marginBottom: '4px', color: '#374151' }}>Legend</div>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
+          <MapPin style={{ width: '14px', height: '14px', color: '#10b981', marginRight: '4px' }} />
+          <span style={{ color: '#6b7280' }}>Mapbox</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <MapPin style={{ width: '14px', height: '14px', color: '#fb923c', marginRight: '4px' }} />
+          <span style={{ color: '#6b7280' }}>Database</span>
+        </div>
+      </div>
     </div>
   );
 });
