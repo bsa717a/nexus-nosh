@@ -200,7 +200,7 @@ export async function getPersonalizedRecommendations(
 
     // Sort by score and return top recommendations
     const sorted = recommendations
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, limitCount);
     console.log('[getPersonalizedRecommendations] Returning', sorted.length, 'recommendations');
     return sorted;
