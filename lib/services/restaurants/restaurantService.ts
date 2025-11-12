@@ -45,7 +45,7 @@ export async function getRestaurant(restaurantId: string): Promise<Restaurant | 
  * Get multiple restaurants by IDs
  */
 export async function getRestaurantsByIds(restaurantIds: string[]): Promise<Restaurant[]> {
-  if (!isFirebaseConfigured || !db || restaurantIds.length === 0) {
+  if (!isFirebaseConfigured || restaurantIds.length === 0) {
     return [];
   }
 
