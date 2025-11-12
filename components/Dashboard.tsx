@@ -449,7 +449,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               <h2 className="text-xl font-semibold">Map — Nearby Picks</h2>
               <div className="flex gap-2">
                 <Button
-                  variant={showMapboxData ? "default" : "outline"}
+                  variant={showMapboxData ? "solid" : "outline"}
                   size="sm"
                   onClick={() => setShowMapboxData(!showMapboxData)}
                   className={showMapboxData ? "bg-orange-500 hover:bg-orange-600 text-white" : ""}
