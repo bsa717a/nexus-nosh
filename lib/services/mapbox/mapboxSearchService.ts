@@ -109,8 +109,8 @@ export async function searchMapboxRestaurants(
             ? categories.slice(0, 3) 
             : ['Restaurant'];
           
-          // Default attributes (no ratings from Mapbox)
-          // Users will add their own ratings!
+          // Only store essential data from Mapbox
+          // Users and community will enrich with ratings, attributes, etc.
           const restaurant: Restaurant = {
             id: `mapbox-${feature.properties.mapbox_id}`,
             name: feature.properties.name_preferred || feature.properties.name,
@@ -120,26 +120,12 @@ export async function searchMapboxRestaurants(
               lng,
             },
             cuisineType,
-            priceRange: {
-              min: 10,
-              max: 30, // Default price range, users can update
-            },
-            attributes: {
-              quietness: 50, // Default, users will rate
-              serviceSpeed: 'medium',
-              atmosphere: 'casual',
-              privateBooths: false,
-              walkableDistance: distance < 1, // Less than 1km
-              idealMeetingTypes: ['casual-checkin', 'social-lunch'],
-            },
-            rating: {
-              average: 0, // No external ratings - users will provide!
-              count: 0,
-            },
-            imageUrl: '', // Mapbox doesn't provide images
-            website: '',
-            phone: '',
-            createdAt: new Date(),
+            source: 'mapbox' as const,
+            
+            // Optional: Add walkable distance attribute if very close
+            attributes: distance < 1 ? {
+              walkableDistance: true,
+            } : undefined,
           };
           
           return restaurant;

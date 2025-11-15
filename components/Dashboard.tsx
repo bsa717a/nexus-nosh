@@ -88,16 +88,48 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   };
 
   // Combine database and Mapbox restaurants
+  // Strategy: Prefer Mapbox data for name/address (live data), but merge with DB enrichments
   const combinedRestaurants = useMemo(() => {
-    const dbRestaurants = allRestaurants;
-    const restaurants = showMapboxData 
-      ? [...dbRestaurants, ...mapboxRestaurants]
-      : dbRestaurants;
+    if (!showMapboxData) {
+      return allRestaurants;
+    }
+    
+    // Use Mapbox as primary source, deduplicate by matching name+location
+    const restaurantMap = new Map<string, Restaurant>();
+    
+    // First add database restaurants (may have user enrichments)
+    allRestaurants.forEach(restaurant => {
+      const key = `${restaurant.name.toLowerCase()}-${restaurant.coordinates.lat.toFixed(4)}-${restaurant.coordinates.lng.toFixed(4)}`;
+      restaurantMap.set(key, { ...restaurant, source: 'database' as const });
+    });
+    
+    // Then add/override with Mapbox restaurants (prefer fresh data for name/address)
+    mapboxRestaurants.forEach(mapboxRest => {
+      const key = `${mapboxRest.name.toLowerCase()}-${mapboxRest.coordinates.lat.toFixed(4)}-${mapboxRest.coordinates.lng.toFixed(4)}`;
+      const existing = restaurantMap.get(key);
+      
+      if (existing) {
+        // Merge: Keep Mapbox name/address/coords, but preserve DB enrichments
+        restaurantMap.set(key, {
+          ...existing, // Keep enrichments from DB
+          id: mapboxRest.id, // Use Mapbox ID going forward
+          name: mapboxRest.name, // Prefer fresh Mapbox name
+          address: mapboxRest.address, // Prefer fresh Mapbox address
+          coordinates: mapboxRest.coordinates, // Prefer fresh Mapbox coordinates
+          source: 'mapbox' as const,
+        });
+      } else {
+        // New restaurant from Mapbox
+        restaurantMap.set(key, mapboxRest);
+      }
+    });
+    
+    const restaurants = Array.from(restaurantMap.values());
     
     console.log('[Dashboard] Combined restaurants:', 
-      'DB:', dbRestaurants.length,
+      'DB:', allRestaurants.length,
       'Mapbox:', mapboxRestaurants.length,
-      'Total:', restaurants.length,
+      'Total after dedup:', restaurants.length,
       'ShowMapbox:', showMapboxData
     );
     
@@ -500,7 +532,8 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                           <IconComponent className={`w-4 h-4 ${matchIcon.color} ${matchIcon.fillColor} flex-shrink-0 ml-2`} />
                         </div>
                         <p className="text-xs text-gray-500 mb-1">
-                          {rec.restaurant.cuisineType[0]} • {rec.restaurant.attributes.atmosphere}
+                          {rec.restaurant.cuisineType[0] || 'Restaurant'} 
+                          {rec.restaurant.attributes?.atmosphere && ` • ${rec.restaurant.attributes.atmosphere}`}
                         </p>
                         <a
                           href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.restaurant.address)}`}
@@ -535,7 +568,8 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                     >
                       <p className="font-semibold text-gray-800">{restaurant.name}</p>
                       <p className="text-xs text-gray-500 mb-1">
-                        {restaurant.cuisineType[0]} • {restaurant.attributes.atmosphere}
+                        {restaurant.cuisineType[0] || 'Restaurant'}
+                        {restaurant.attributes?.atmosphere && ` • ${restaurant.attributes.atmosphere}`}
                       </p>
                       <a
                         href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(restaurant.address)}`}

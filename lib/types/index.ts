@@ -26,12 +26,18 @@ export interface UserSettings {
 
 export interface UserRestaurantState {
   userId: string;
-  restaurantId: string;
+  restaurantId: string; // Maps to Restaurant.id (e.g., "mapbox-abc123")
   wantToGo: boolean;
   hasBeen: boolean;
   personalRating?: number; // 1-5
   notes?: string;
   zipCode?: string;
+  
+  // Optional user-contributed data to enrich restaurant info
+  userProvidedPhone?: string;
+  userProvidedHours?: string;
+  userUploadedPhotos?: string[]; // URLs to user-uploaded images
+  
   updatedAt: Date;
 }
 
@@ -57,8 +63,9 @@ export interface TasteProfile {
 }
 
 // Restaurant Types
+// Core restaurant data from Mapbox (always present)
 export interface Restaurant {
-  id: string;
+  id: string; // Format: "mapbox-{mapboxId}" for Mapbox restaurants
   name: string;
   address: string;
   coordinates: {
@@ -66,26 +73,31 @@ export interface Restaurant {
     lng: number;
   };
   cuisineType: string[];
-  priceRange: {
+  
+  // Optional fields - may come from Mapbox, user input, or community data
+  priceRange?: {
     min: number;
     max: number;
   };
-  attributes: {
-    quietness: number;
-    serviceSpeed: 'fast' | 'medium' | 'slow';
-    atmosphere: 'casual' | 'upscale' | 'energetic' | 'intimate';
-    privateBooths: boolean;
-    walkableDistance: boolean;
-    idealMeetingTypes: MeetingType[];
+  attributes?: {
+    quietness?: number;
+    serviceSpeed?: 'fast' | 'medium' | 'slow';
+    atmosphere?: 'casual' | 'upscale' | 'energetic' | 'intimate';
+    privateBooths?: boolean;
+    walkableDistance?: boolean;
+    idealMeetingTypes?: MeetingType[];
   };
-  rating: {
+  rating?: {
     average: number;
     count: number;
   };
   imageUrl?: string;
   website?: string;
   phone?: string;
-  createdAt: Date;
+  createdAt?: Date;
+  
+  // Source tracking
+  source?: 'mapbox' | 'database' | 'user-created';
 }
 
 // Rating Types
