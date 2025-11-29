@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { MapPin, Star, Users, Filter, Clock, User, LogOut } from 'lucide-react';
@@ -32,6 +32,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const [zipFilter, setZipFilter] = useState<string>('');
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | undefined>(userLocation);
   const [showMapboxData, setShowMapboxData] = useState(true);
+  const [visibleRestaurants, setVisibleRestaurants] = useState<Restaurant[]>([]);
 
   useEffect(() => {
     loadData();
@@ -44,27 +45,23 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     }
   }, [userLocation]);
 
+  // Removed excessive debug logging that could cause performance issues
+
   async function loadData() {
     setLoading(true);
     try {
-      console.log('[Dashboard] Loading data for user:', userId);
       const [recs, profile, restaurants] = await Promise.all([
         getPersonalizedRecommendations(userId, userLocation),
         getTasteProfile(userId),
         getAllRestaurants(100),
       ]);
-      console.log('[Dashboard] Recommendations loaded:', recs.length, recs);
-      console.log('[Dashboard] Taste profile loaded:', profile);
-      console.log('[Dashboard] All restaurants loaded:', restaurants.length, restaurants);
       setRecommendations(recs);
       setTasteProfile(profile);
       setAllRestaurants(restaurants);
 
       // Load Mapbox restaurants if user location is available
       if (userLocation) {
-        console.log('[Dashboard] Loading Mapbox restaurants near:', userLocation);
         const mapboxRests = await searchMapboxRestaurants(userLocation, 10000, 25);
-        console.log('[Dashboard] Mapbox restaurants loaded:', mapboxRests.length, mapboxRests);
         setMapboxRestaurants(mapboxRests);
       }
     } catch (error) {
@@ -125,14 +122,6 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     });
     
     const restaurants = Array.from(restaurantMap.values());
-    
-    console.log('[Dashboard] Combined restaurants:', 
-      'DB:', allRestaurants.length,
-      'Mapbox:', mapboxRestaurants.length,
-      'Total after dedup:', restaurants.length,
-      'ShowMapbox:', showMapboxData
-    );
-    
     return restaurants;
   }, [allRestaurants, mapboxRestaurants, showMapboxData]);
 
@@ -143,7 +132,6 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     // Apply ZIP code filter if active
     if (zipFilter.trim()) {
       filtered = filtered.filter(r => r.address.includes(zipFilter.trim()));
-      console.log('[Dashboard] Filtered by ZIP:', zipFilter, 'Found:', filtered.length);
     }
 
     // Sort by distance if user location is available
@@ -159,10 +147,8 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
         );
         return distA - distB;
       });
-      console.log('[Dashboard] Sorted by distance from user location');
     }
 
-    console.log('[Dashboard] filteredAndSortedRestaurants count:', filtered.length);
     return filtered;
   }, [combinedRestaurants, zipFilter, userLocation]);
 
@@ -194,14 +180,11 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const seenIds = new Set<string>();
   const uniqueRecs = recommendations.filter((rec) => {
     if (seenIds.has(rec.restaurant.id)) {
-      console.log('[Dashboard] Filtering duplicate:', rec.restaurant.name, rec.restaurant.id);
       return false;
     }
     seenIds.add(rec.restaurant.id);
     return true;
   });
-  
-  console.log('[Dashboard] Unique recommendations:', uniqueRecs.length, 'from', recommendations.length);
   
   const topPicks = uniqueRecs
     .map(rec => ({
@@ -211,8 +194,6 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     }))
     .sort((a, b) => b.adjustedScore - a.adjustedScore)
     .slice(0, 3);
-    
-  console.log('[Dashboard] Top 3 picks:', topPicks.map(p => ({ name: p.restaurant.name, id: p.restaurant.id, score: p.adjustedScore })));
 
   // Friend recommendations
   const friendPicks = recommendations
@@ -249,27 +230,20 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
 
   // Handle restaurant card click - focus on map
   const handleRestaurantClick = (restaurantId: string) => {
-    console.log('[Dashboard] Restaurant card clicked:', restaurantId);
-    console.log('[Dashboard] mapRef.current:', mapRef.current);
     if (mapRef.current) {
-      console.log('[Dashboard] Calling focusRestaurant');
       mapRef.current.focusRestaurant(restaurantId);
-    } else {
-      console.error('[Dashboard] mapRef.current is null!');
     }
   };
 
   // Handle "Near Me" button click
   const handleNearMeClick = () => {
     if (navigator.geolocation) {
-      console.log('[Dashboard] Requesting current location...');
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const newLocation = {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           };
-          console.log('[Dashboard] Got current location:', newLocation);
           setMapCenter(newLocation);
         },
         (error) => {
@@ -505,60 +479,19 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                 </Button>
               </div>
             </div>
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="md:col-span-2 rounded-xl overflow-hidden">
+            <div className="grid md:grid-cols-[1fr_280px] gap-3">
+              <div className="rounded-xl overflow-hidden h-[600px]">
                 <MapView 
                   ref={mapRef}
                   restaurants={filteredAndSortedRestaurants}
                   center={mapCenter || { lat: 37.0965, lng: -113.5684 }}
-                  height="400px"
+                  height="100%"
+                  onBoundsChange={setVisibleRestaurants}
                 />
               </div>
-              <div className="space-y-3">
-                {nearbyPicks.length > 0 ? (
-                  nearbyPicks.map((rec) => {
-                    const matchIcon = getMatchIcon(rec.matchType);
-                    const IconComponent = matchIcon.icon;
-                    return (
-                      <div 
-                        key={rec.restaurant.id} 
-                        onClick={() => handleRestaurantClick(rec.restaurant.id)}
-                      >
-                      <Card 
-                        className="p-3 border rounded-xl hover:shadow-md transition-shadow cursor-pointer"
-                      >
-                        <div className="flex items-start justify-between mb-1">
-                          <p className="font-semibold text-gray-800">{rec.restaurant.name}</p>
-                          <IconComponent className={`w-4 h-4 ${matchIcon.color} ${matchIcon.fillColor} flex-shrink-0 ml-2`} />
-                        </div>
-                        <p className="text-xs text-gray-500 mb-1">
-                          {rec.restaurant.cuisineType[0] || 'Restaurant'} 
-                          {rec.restaurant.attributes?.atmosphere && ` • ${rec.restaurant.attributes.atmosphere}`}
-                        </p>
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.restaurant.address)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-800 text-xs mb-2 flex items-start hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
-                          <span className="line-clamp-2">{rec.restaurant.address}</span>
-                        </a>
-                        <p className="text-xs text-gray-600">
-                          {rec.reasons[0] || 'Recommended for you'}
-                        </p>
-                        {rec.matchScore && (
-                          <div className="mt-1 text-xs text-gray-400">
-                            {Math.round(rec.matchScore)}% match
-                          </div>
-                        )}
-                      </Card>
-                      </div>
-                    );
-                  })
-                ) : allRestaurants.length > 0 ? (
-                  allRestaurants.slice(0, 3).map((restaurant) => (
+              <div className="max-h-[600px] overflow-y-auto space-y-2 pr-2">
+                {visibleRestaurants.length > 0 ? (
+                  visibleRestaurants.map((restaurant) => (
                     <div
                       key={restaurant.id}
                       onClick={() => handleRestaurantClick(restaurant.id)}
@@ -566,7 +499,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                     <Card 
                       className="p-3 border rounded-xl hover:shadow-md transition-shadow cursor-pointer"
                     >
-                      <p className="font-semibold text-gray-800">{restaurant.name}</p>
+                      <p className="font-semibold text-gray-800 text-sm">{restaurant.name}</p>
                       <p className="text-xs text-gray-500 mb-1">
                         {restaurant.cuisineType[0] || 'Restaurant'}
                         {restaurant.attributes?.atmosphere && ` • ${restaurant.attributes.atmosphere}`}
@@ -586,7 +519,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                   ))
                 ) : (
                   <div className="text-center py-8 text-gray-500">
-                    <p className="text-sm">No restaurants available</p>
+                    <p className="text-sm">No restaurants visible in map</p>
                   </div>
                 )}
               </div>
@@ -671,7 +604,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       </motion.section>
 
                {/* Action Bar */}
-               <div className="fixed bottom-6 inset-x-0 flex justify-center z-10 gap-4">
+               <div className="fixed bottom-6 inset-x-0 flex justify-center z-50 gap-4">
                  <Link href="/profile">
                    <Button
                      className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white"
@@ -681,7 +614,9 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                    </Button>
                  </Link>
                  <Link href="/restaurants">
-                   <Button className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white">
+                   <Button 
+                     className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white"
+                   >
                      <MapPin className="w-5 h-5 mr-2" />
                      Restaurants
                    </Button>

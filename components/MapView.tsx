@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useImperativeHandle, forwardRef } from 'react';
+import { useMemo, useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
 import Map, { Marker, NavigationControl, Popup, MapRef } from 'react-map-gl';
 import { RestaurantRecommendation, Restaurant } from '@/lib/types';
 import { MapPin, Star } from 'lucide-react';
@@ -9,6 +9,7 @@ interface MapViewProps {
   center?: { lat: number; lng: number };
   height?: string;
   onRestaurantSelect?: (restaurant: Restaurant) => void;
+  onBoundsChange?: (visibleRestaurants: Restaurant[]) => void;
 }
 
 export interface MapViewHandle {
@@ -20,35 +21,13 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
   restaurants = [], 
   center, 
   height = '400px',
-  onRestaurantSelect 
+  onRestaurantSelect,
+  onBoundsChange
 }, ref) => {
   // Mapbox token with fallback (public token, safe to include)
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoiYnNhNzE3IiwiYSI6ImNtaG13YnZvczIxcHIybXB1N2E0NnJpcHcifQ.Z-AeF3-pt2ihl2uz71Lvxg';
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const mapRef = useRef<MapRef>(null);
-
-  // Hide POI labels when map loads
-  const onMapLoad = () => {
-    const map = mapRef.current?.getMap();
-    if (map) {
-      // Hide all POI labels (points of interest)
-      const style = map.getStyle();
-      if (style && style.layers) {
-        style.layers.forEach((layer: any) => {
-          // Hide POI labels and icons
-          if (layer.id.includes('poi-label') || 
-              layer.id.includes('poi') || 
-              layer.id.includes('place-label') ||
-              layer.type === 'symbol') {
-            // Only hide if it's a POI or place label, not road labels
-            if (layer.id.includes('poi') || layer.id.includes('place-label')) {
-              map.setLayoutProperty(layer.id, 'visibility', 'none');
-            }
-          }
-        });
-      }
-    }
-  };
 
   // Convert restaurants to display format if provided
   const displayItems = useMemo(() => {
@@ -65,8 +44,57 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
     }));
   }, [recommendations, restaurants]);
 
-  // Debug logging
-  console.log('[MapView] Display items:', displayItems.length, displayItems);
+  // Handle map bounds change to update visible restaurants
+  // Use useCallback to prevent infinite loops and memoize the function
+  const handleMapMove = useCallback(() => {
+    if (!mapRef.current || !onBoundsChange) {
+      return;
+    }
+
+    const map = mapRef.current.getMap();
+    const bounds = map.getBounds();
+
+    // Filter restaurants that are within the visible bounds
+    const visibleRestaurants = displayItems
+      .filter(item => {
+        const { lat, lng } = item.restaurant.coordinates;
+        const isVisible = bounds.contains([lng, lat]);
+        return isVisible;
+      })
+      .map(item => item.restaurant);
+
+    onBoundsChange(visibleRestaurants);
+  }, [displayItems, onBoundsChange]);
+
+  // Hide POI labels when map loads
+  const onMapLoad = () => {
+    const map = mapRef.current?.getMap();
+    if (map) {
+      // Hide all POI labels (points of interest)
+      const style = map.getStyle();
+      if (style && style.layers) {
+        style.layers.forEach((layer: any) => {
+          // Hide POI labels and icons
+          if (layer.id.includes('poi-label') || 
+              layer.id.includes('poi') || 
+              layer.id.includes('place-label')) {
+            map.setLayoutProperty(layer.id, 'visibility', 'none');
+          }
+        });
+      }
+
+      // Initialize the visible restaurants list on map load
+      handleMapMove();
+    }
+  };
+
+  // Update visible restaurants whenever displayItems changes
+  // Only update when displayItems actually changes, not on every render
+  useEffect(() => {
+    if (mapRef.current && onBoundsChange && displayItems.length > 0) {
+      handleMapMove();
+    }
+  }, [displayItems, onBoundsChange, handleMapMove]);
 
   // Default center to Saint George, Utah if not provided
   const defaultCenter = { lat: 37.0965, lng: -113.5684 };
@@ -75,14 +103,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
   // Expose method to focus on a restaurant
   useImperativeHandle(ref, () => ({
     focusRestaurant: (restaurantId: string) => {
-      console.log('[MapView] focusRestaurant called with ID:', restaurantId);
-      console.log('[MapView] displayItems:', displayItems.length);
       const item = displayItems.find(i => i.restaurant.id === restaurantId);
-      console.log('[MapView] Found item:', item);
-      console.log('[MapView] mapRef.current:', mapRef.current);
       
       if (item && mapRef.current) {
-        console.log('[MapView] Flying to:', item.restaurant.coordinates);
         // Fly to the restaurant location
         mapRef.current.flyTo({
           center: [item.restaurant.coordinates.lng, item.restaurant.coordinates.lat],
@@ -91,11 +114,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         });
         // Show the popup
         setSelectedRestaurant(item.restaurant);
-      } else {
-        console.error('[MapView] Could not focus - item or mapRef missing');
       }
     }
-  }));
+  }), [displayItems]);
 
   // Get color based on match type - gray for all restaurants, color for personalized
   const getMarkerColor = (matchType: string, restaurant: Restaurant) => {
@@ -154,6 +175,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         mapStyle="mapbox://styles/mapbox/streets-v12"
         mapboxAccessToken={token}
         onLoad={onMapLoad}
+        onMoveEnd={handleMapMove}
+        onZoomEnd={handleMapMove}
       >
         <NavigationControl position="top-left" />
         

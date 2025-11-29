@@ -78,11 +78,11 @@ export default function LunchApp() {
                 <Button variant="outline" size="sm">Filters</Button>
               </div>
             </div>
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <MapView recommendations={[]} center={center} />
+            <div className="grid md:grid-cols-[1fr_280px] gap-3">
+              <div className="min-w-0">
+                <MapView recommendations={[]} center={center} height="600px" />
               </div>
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[700px] overflow-y-auto">
                 {RESTAURANTS.map((i) => (
                   <Card key={i.name} className="border rounded-xl">
                     <CardContent>
