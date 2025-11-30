@@ -53,11 +53,17 @@ echo -e "${GREEN}✓ Build successful${NC}"
 echo -e "\n📦 Preparing standalone build for deployment..."
 if [ -d ".next/standalone" ]; then
     # Copy standalone build to root (App Engine expects files at root)
+    # Save reference to original static directory before copying
+    ORIGINAL_STATIC=".next/static"
     cp -r .next/standalone/* .
-    # Copy static assets
-    if [ -d ".next/static" ]; then
-        mkdir -p .next
-        cp -r .next/static .next/static
+    # Copy static assets - Next.js standalone expects .next/static relative to server.js
+    # Check if static was already copied from standalone, if not copy from original location
+    if [ ! -d ".next/static" ]; then
+        if [ -d "$ORIGINAL_STATIC" ]; then
+            echo "Copying static assets from build directory..."
+            mkdir -p .next
+            cp -r "$ORIGINAL_STATIC" .next/static
+        fi
     fi
     echo -e "${GREEN}✓ Standalone build prepared${NC}"
 else
