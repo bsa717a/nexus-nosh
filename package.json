@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^4.0.0",
-    "@next/swc-darwin-arm64": "^16.0.3",
     "autoprefixer": "10.4.20",
     "firebase": "^12.5.0",
     "framer-motion": "11.0.8",
