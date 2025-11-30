@@ -369,32 +369,9 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   }, []);
 
   return (
-    <div className="bg-gradient-to-b from-orange-50 to-white min-h-screen pb-6">
-      {/* Navigation Bar */}
-      <nav className="bg-white/80 backdrop-blur-md shadow-sm px-6 py-4 flex justify-between items-center sticky top-0 z-40">
-        <div className="flex flex-col">
-          <h1 className="text-xl font-bold text-orange-500">Nexus Nosh</h1>
-          <p className="text-xs text-gray-500 hidden sm:block">Smart lunch pairings</p>
-        </div>
-        <div className="flex gap-3 items-center">
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => router.push('/restaurants')}
-            className="flex items-center gap-2"
-          >
-            <MapPin className="w-4 h-4" />
-            <span className="hidden sm:inline">Restaurants</span>
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => router.push('/profile')}
-            className="flex items-center gap-2"
-          >
-            <User className="w-4 h-4" />
-            <span className="hidden sm:inline">Profile</span>
-          </Button>
+    <div className="p-6 space-y-8 bg-gradient-to-b from-orange-50 to-white min-h-screen pb-24">
+      <header className="text-center relative">
+        <div className="absolute top-0 right-0">
           <Button
             variant="outline"
             size="sm"
@@ -406,16 +383,15 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                 console.error('Error signing out:', error);
               }
             }}
-            className="text-gray-600 hover:text-gray-900 border-gray-200"
-            title="Sign Out"
+            className="text-gray-600 hover:text-gray-900"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-4 h-4 mr-1" />
+            Sign Out
           </Button>
         </div>
-      </nav>
-
-      <div className="p-6 space-y-8">
-
+        <h1 className="text-3xl font-bold mb-2">Nexus Nosh</h1>
+        <p className="text-gray-600">Smart lunch pairings for business and pleasure</p>
+      </header>
 
       {/* Welcome / Home Screen */}
       <motion.section 
@@ -748,7 +724,36 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
         </Card>
       </motion.section>
 
-      </div>
+               {/* Action Bar */}
+               <div className="fixed bottom-6 inset-x-0 flex justify-center z-50 gap-4">
+                 <Button
+                   type="button"
+                   onClick={() => {
+                     if (typeof window !== 'undefined') {
+                       window.location.href = '/profile';
+                     }
+                   }}
+                   className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                 >
+                   <User className="w-5 h-5 mr-2" />
+                   Profile
+                 </Button>
+                 <Button 
+                   type="button"
+                   onClick={() => {
+                     if (typeof window !== 'undefined') {
+                       window.location.href = '/restaurants';
+                     }
+                   }}
+                   className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                 >
+                   <MapPin className="w-5 h-5 mr-2" />
+                   Restaurants
+                 </Button>
+                 <Button className="rounded-full shadow-lg px-8 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white">
+                   + Add Restaurant
+                 </Button>
+               </div>
     </div>
   );
 }
