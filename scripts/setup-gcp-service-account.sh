@@ -41,6 +41,9 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
     --role="roles/appengine.deployer" --quiet || true
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/appengine.serviceAdmin" --quiet || true
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/storage.admin" --quiet || true
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:${SA_EMAIL}" \
