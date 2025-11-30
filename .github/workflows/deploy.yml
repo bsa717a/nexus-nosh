@@ -45,21 +45,28 @@ jobs:
 
       - name: Prepare standalone build for deployment
         run: |
+          # Verify standalone build exists
+          if [ ! -d ".next/standalone" ]; then
+            echo "::error::Standalone build not found. Build may have failed."
+            exit 1
+          fi
           # Copy standalone build to root (App Engine expects files at root)
+          echo "Copying standalone build files..."
           cp -r .next/standalone/* .
           # Copy static assets - Next.js standalone expects .next/static relative to server.js
-          mkdir -p .next
-          cp -r .next/static .next/static || true
-          # Ensure app.yaml is in the deployment root
-          cp app.yaml . || true
-          # List files to verify deployment structure
-          echo "Files ready for deployment:"
-          ls -la | head -20
-          echo "Checking for required files:"
-          test -f server.js && echo "✓ server.js found" || echo "✗ server.js missing"
-          test -f package.json && echo "✓ package.json found" || echo "✗ package.json missing"
-          test -f app.yaml && echo "✓ app.yaml found" || echo "✗ app.yaml missing"
-          test -d .next/static && echo "✓ .next/static directory found" || echo "✗ .next/static directory missing"
+          if [ -d ".next/static" ]; then
+            mkdir -p .next
+            cp -r .next/static .next/static
+            echo "✓ Static assets copied"
+          else
+            echo "⚠️  .next/static not found (may be in standalone directory)"
+          fi
+          # Verify required files exist
+          echo "Verifying deployment files:"
+          test -f server.js && echo "✓ server.js found" || (echo "✗ server.js missing" && exit 1)
+          test -f package.json && echo "✓ package.json found" || (echo "✗ package.json missing" && exit 1)
+          test -f app.yaml && echo "✓ app.yaml found" || (echo "✗ app.yaml missing" && exit 1)
+          echo "✓ All required files present"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -75,15 +82,26 @@ jobs:
       - name: Deploy to App Engine
         id: deploy
         run: |
-          DEPLOY_OUTPUT=$(gcloud app deploy --verbosity=info 2>&1 | tee deploy.log)
+          echo "Starting deployment..."
+          DEPLOY_OUTPUT=$(gcloud app deploy --quiet 2>&1 | tee deploy.log)
+          DEPLOY_EXIT=$?
+          cat deploy.log
+          if [ $DEPLOY_EXIT -ne 0 ]; then
+            echo "::error::Deployment failed with exit code $DEPLOY_EXIT"
+            exit $DEPLOY_EXIT
+          fi
           # Extract version ID from deployment output
-          VERSION_ID=$(echo "$DEPLOY_OUTPUT" | grep -oP 'target version: \[\K[^\]]+' || echo "")
+          VERSION_ID=$(grep -oP 'target version: \[\K[^\]]+' deploy.log | head -1 || echo "")
           if [ -z "$VERSION_ID" ]; then
-            # Fallback: get latest version after deployment
-            sleep 3
+            echo "Version ID not found in output, waiting and checking latest version..."
+            sleep 5
             VERSION_ID=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
           fi
-          echo "Deployed version: $VERSION_ID"
+          if [ -z "$VERSION_ID" ]; then
+            echo "::error::Could not determine deployed version ID"
+            exit 1
+          fi
+          echo "✓ Successfully deployed version: $VERSION_ID"
           echo "version_id=$VERSION_ID" >> $GITHUB_OUTPUT
         env:
           CLOUDSDK_CORE_PROJECT: nexus-nosh
