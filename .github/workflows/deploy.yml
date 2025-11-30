@@ -47,7 +47,8 @@ jobs:
         run: |
           # Copy standalone build to root (App Engine expects files at root)
           cp -r .next/standalone/* .
-          # Copy static assets (Next.js needs these)
+          # Copy static assets - Next.js standalone expects .next/static relative to server.js
+          mkdir -p .next
           cp -r .next/static .next/static || true
           # Ensure app.yaml is in the deployment root
           cp app.yaml . || true
@@ -58,6 +59,7 @@ jobs:
           test -f server.js && echo "✓ server.js found" || echo "✗ server.js missing"
           test -f package.json && echo "✓ package.json found" || echo "✗ package.json missing"
           test -f app.yaml && echo "✓ app.yaml found" || echo "✗ app.yaml missing"
+          test -d .next/static && echo "✓ .next/static directory found" || echo "✗ .next/static directory missing"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
