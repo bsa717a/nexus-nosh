@@ -5,7 +5,9 @@
 .git
 .gitignore
 node_modules/
-.next/
+# Exclude .next but include standalone build output
+.next/*
+!.next/standalone
 .env*.local
 # Don't ignore .env.production - needed for build
 !.env.production
