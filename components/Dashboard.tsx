@@ -23,6 +23,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const mapRef = useRef<MapViewHandle>(null);
   const mapSectionRef = useRef<HTMLElement>(null);
   const [recommendations, setRecommendations] = useState<RestaurantRecommendation[]>([]);
+  const [seededRecommendations, setSeededRecommendations] = useState<RestaurantRecommendation[]>([]);
   const [allRestaurants, setAllRestaurants] = useState<Restaurant[]>([]);
   const [mapboxRestaurants, setMapboxRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +50,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
         getAllRestaurants(100),
       ]);
       setRecommendations(recs);
+      setSeededRecommendations(recs);
       setTasteProfile(profile);
       setAllRestaurants(restaurants);
 
@@ -68,6 +70,30 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Mix seeded recommendations with local Mapbox results for variety
+  useEffect(() => {
+    if (mapboxRestaurants.length > 0 || seededRecommendations.length > 0) {
+      // Convert Mapbox restaurants to recommendations
+      const mapboxRecs: RestaurantRecommendation[] = mapboxRestaurants.map(r => ({
+        restaurant: r,
+        matchScore: 70 + Math.floor(Math.random() * 26), // Random 70-95%
+        matchType: 'smart-match',
+        reasons: ['Popular in this area', 'Matches your location context']
+      }));
+
+      // Combine seeded and mapbox recs
+      const combined = [...seededRecommendations, ...mapboxRecs];
+      
+      // Deduplicate by ID
+      const unique = Array.from(new Map(combined.map(item => [item.restaurant.id, item])).values());
+      
+      // Shuffle to randomize
+      const shuffled = unique.sort(() => Math.random() - 0.5);
+      
+      setRecommendations(shuffled.slice(0, 10));
+    }
+  }, [mapboxRestaurants, seededRecommendations]);
 
   // Update map center when userLocation changes
   useEffect(() => {
