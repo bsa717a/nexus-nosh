@@ -1,8 +1,5 @@
 runtime: nodejs20
 
-# For Next.js standalone mode
-entrypoint: node server.js
-
 env_variables:
   NODE_ENV: production
   NEXT_PUBLIC_FIREBASE_API_KEY: "AIzaSyBwDU2LlhEXIzB5iw4zhq_uepf2K4skPSc"
