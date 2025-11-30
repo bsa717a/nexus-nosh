@@ -21,6 +21,7 @@ interface DashboardProps {
 export default function Dashboard({ userId, userLocation, userName = 'Derek' }: DashboardProps) {
   const router = useRouter();
   const mapRef = useRef<MapViewHandle>(null);
+  const mapSectionRef = useRef<HTMLElement>(null);
   const [recommendations, setRecommendations] = useState<RestaurantRecommendation[]>([]);
   const [allRestaurants, setAllRestaurants] = useState<Restaurant[]>([]);
   const [mapboxRestaurants, setMapboxRestaurants] = useState<Restaurant[]>([]);
@@ -256,34 +257,47 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   // Handle restaurant card click - focus on map
   const handleRestaurantClick = (restaurantId: string) => {
     // Find the restaurant from recommendations or all restaurants
-    const restaurant = recommendations.find(r => r.restaurant.id === restaurantId)?.restaurant 
+    const originalRestaurant = recommendations.find(r => r.restaurant.id === restaurantId)?.restaurant 
       || allRestaurants.find(r => r.id === restaurantId)
       || mapboxRestaurants.find(r => r.id === restaurantId);
     
-    if (restaurant) {
-      // Check if restaurant is already visible in the map list
-      // If it is, we can just focus it directly without managing map center state manually
-      // This avoids race conditions between setMapCenter and focusRestaurant
-      const isVisible = filteredAndSortedRestaurants.find(r => r.id === restaurantId);
+    if (originalRestaurant) {
+      // Scroll map into view
+      mapSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Try to find the matching restaurant in the current map list
+      // 1. Exact ID match
+      let mapRestaurant = filteredAndSortedRestaurants.find(r => r.id === restaurantId);
       
-      if (isVisible && mapRef.current) {
-      mapRef.current.focusRestaurant(restaurantId);
+      // 2. If not found, try coordinate match (handles cases where ID was swapped for Mapbox ID)
+      if (!mapRestaurant) {
+        mapRestaurant = filteredAndSortedRestaurants.find(r => 
+          Math.abs(r.coordinates.lat - originalRestaurant.coordinates.lat) < 0.0001 &&
+          Math.abs(r.coordinates.lng - originalRestaurant.coordinates.lng) < 0.0001
+        );
+      }
+
+      const targetId = mapRestaurant ? mapRestaurant.id : restaurantId;
+
+      if (mapRestaurant && mapRef.current) {
+        // If it's visible in the list, focus immediately using the CORRECT ID from the list
+        mapRef.current.focusRestaurant(targetId);
         return;
       }
 
       // If not visible (e.g. filtered out), we need to force it into the list
-      setFocusedRestaurantId(restaurantId);
+      setFocusedRestaurantId(targetId);
       
       // Clear ZIP filter if it would hide this restaurant
-      if (zipFilter.trim() && !restaurant.address.includes(zipFilter.trim())) {
+      if (zipFilter.trim() && !originalRestaurant.address.includes(zipFilter.trim())) {
         setZipFilter('');
       }
       
       // Update map center to the restaurant location
       // The useEffect will handle focusing once the restaurant is in the list
       setMapCenter({
-        lat: restaurant.coordinates.lat,
-        lng: restaurant.coordinates.lng,
+        lat: originalRestaurant.coordinates.lat,
+        lng: originalRestaurant.coordinates.lng,
       });
       
       // Clear focused restaurant ID after 10 seconds
@@ -372,18 +386,35 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   // Focus restaurant when it becomes available in the filtered list
   useEffect(() => {
     if (focusedRestaurantId && mapRef.current) {
-      const restaurant = filteredAndSortedRestaurants.find(r => r.id === focusedRestaurantId);
+      // Try exact match first
+      let restaurant = filteredAndSortedRestaurants.find(r => r.id === focusedRestaurantId);
+      
+      // If not found, try to resolve the original restaurant to get coordinates for fuzzy match
+      if (!restaurant) {
+         const original = recommendations.find(r => r.restaurant.id === focusedRestaurantId)?.restaurant 
+           || allRestaurants.find(r => r.id === focusedRestaurantId)
+           || mapboxRestaurants.find(r => r.id === focusedRestaurantId);
+           
+         if (original) {
+            restaurant = filteredAndSortedRestaurants.find(r => 
+              Math.abs(r.coordinates.lat - original.coordinates.lat) < 0.0001 &&
+              Math.abs(r.coordinates.lng - original.coordinates.lng) < 0.0001
+            );
+         }
+      }
+
       if (restaurant) {
         // Wait a bit for the map to update with new restaurants
         const timeoutId = setTimeout(() => {
           if (mapRef.current) {
-            mapRef.current.focusRestaurant(focusedRestaurantId);
+            // Use the ID from the found restaurant (might be different from focusedRestaurantId)
+            mapRef.current.focusRestaurant(restaurant.id);
           }
         }, 300);
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [focusedRestaurantId, filteredAndSortedRestaurants]);
+  }, [focusedRestaurantId, filteredAndSortedRestaurants, recommendations, allRestaurants, mapboxRestaurants]);
 
   // Get time-based greeting
   const getGreeting = () => {
@@ -559,6 +590,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
 
       {/* Map Section */}
       <motion.section 
+        ref={mapSectionRef}
         initial={{ opacity: 0, y: 20 }} 
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.3 }}
