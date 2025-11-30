@@ -256,6 +256,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
               <div
                 className="cursor-pointer transform hover:scale-110 transition-transform"
                 style={{ color }}
+                title={item.restaurant.name}
               >
                 <MapPin className="w-8 h-8 fill-current" />
             </div>
@@ -278,11 +279,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                 <h3 className="font-semibold text-gray-800 flex-1">
                   {selectedRestaurant.name}
                 </h3>
-                {selectedRestaurant.id.startsWith('mapbox-') && (
-                  <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-full whitespace-nowrap">
-                    Mapbox
-                  </span>
-                )}
               </div>
               {selectedRestaurant.rating?.average !== undefined && (
                 <div className="flex items-center gap-1 text-yellow-500 mb-2">
@@ -297,9 +293,14 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                   )}
                 </div>
               )}
-              <p className="text-xs text-gray-600 mb-2">
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedRestaurant.address)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-orange-600 hover:text-orange-700 hover:underline mb-2 block"
+              >
                 {selectedRestaurant.address}
-              </p>
+              </a>
               <div className="flex flex-wrap gap-1 mb-2">
                 {selectedRestaurant.cuisineType && Array.isArray(selectedRestaurant.cuisineType) && selectedRestaurant.cuisineType.slice(0, 2).map((cuisine) => (
                   <span
