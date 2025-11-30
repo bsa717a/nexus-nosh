@@ -73,17 +73,28 @@ jobs:
         run: gcloud config set project nexus-nosh
 
       - name: Deploy to App Engine
-        run: gcloud app deploy --verbosity=debug 2>&1 | tee deploy.log || (cat deploy.log && exit 1)
+        id: deploy
+        run: |
+          DEPLOY_OUTPUT=$(gcloud app deploy --verbosity=info 2>&1 | tee deploy.log)
+          # Extract version ID from deployment output
+          VERSION_ID=$(echo "$DEPLOY_OUTPUT" | grep -oP 'target version: \[\K[^\]]+' || echo "")
+          if [ -z "$VERSION_ID" ]; then
+            # Fallback: get latest version after deployment
+            sleep 3
+            VERSION_ID=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
+          fi
+          echo "Deployed version: $VERSION_ID"
+          echo "version_id=$VERSION_ID" >> $GITHUB_OUTPUT
         env:
           CLOUDSDK_CORE_PROJECT: nexus-nosh
 
       - name: Migrate traffic to new version
         run: |
-          # Wait a moment for the version to be fully created
-          sleep 5
-          # Get the latest deployed version (most recently created)
-          NEW_VERSION=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
-          echo "Latest version found: $NEW_VERSION"
+          NEW_VERSION="${{ steps.deploy.outputs.version_id }}"
+          if [ -z "$NEW_VERSION" ]; then
+            echo "Could not determine version ID, using latest"
+            NEW_VERSION=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
+          fi
           echo "Migrating 100% traffic to version: $NEW_VERSION"
           gcloud app services set-traffic default --splits=$NEW_VERSION=1 --quiet
           echo "✓ Traffic migration complete"
