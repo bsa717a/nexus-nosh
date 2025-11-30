@@ -13,6 +13,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check for required secrets
+        run: |
+          if [ -z "${{ secrets.GCP_SA_KEY }}" ]; then
+            echo "::error::GCP_SA_KEY secret is not set. Please configure GitHub secrets."
+            echo "See SETUP_GITHUB_ACTIONS.md for instructions."
+            exit 1
+          fi
+          echo "✓ Required secrets are configured"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
