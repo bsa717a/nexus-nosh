@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Save, Bell, Lock, Sliders } from 'lucide-react';
+import { Save, Bell, Lock, Sliders } from 'lucide-react';
+import BottomNav from '@/components/BottomNav';
 import { motion } from 'framer-motion';
 import { getTasteProfile, updateTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { getUserSettings, updateNotificationSettings } from '@/lib/services/user-settings/userSettingsService';
@@ -156,26 +156,21 @@ export default function Settings({ userId }: SettingsProps) {
   return (
     <div className="p-6 space-y-8 bg-gradient-to-b from-orange-50 to-white min-h-screen pb-24">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/profile">
-            <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-          </Link>
-          <h1 className="text-3xl font-bold">Settings</h1>
+      <header className="text-center relative">
+        <div className="absolute top-0 right-0">
+          <Button 
+            onClick={handleSave} 
+            size="sm" 
+            className="bg-orange-500 hover:bg-orange-600 text-white"
+            disabled={saving}
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
         </div>
-        <Button 
-          onClick={handleSave} 
-          size="sm" 
-          className="bg-orange-500 hover:bg-orange-600 text-white"
-          disabled={saving}
-        >
-          <Save className="w-4 h-4 mr-2" />
-          {saving ? 'Saving...' : 'Save Changes'}
-        </Button>
-      </div>
+        <h1 className="text-3xl font-bold mb-2">Settings</h1>
+        <p className="text-gray-600">Customize your experience</p>
+      </header>
 
       {/* Taste Preferences */}
       <motion.section
@@ -454,6 +449,8 @@ export default function Settings({ userId }: SettingsProps) {
           </CardContent>
         </Card>
       </motion.section>
+
+      <BottomNav />
     </div>
   );
 }

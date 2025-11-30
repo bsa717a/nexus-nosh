@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { User, Edit2, Save, X, Settings, Star, MapPin, Users, Clock, LogOut, ArrowLeft } from 'lucide-react';
+import { User, Edit2, Save, X, Star, MapPin, Users, Clock } from 'lucide-react';
+import BottomNav from '@/components/BottomNav';
 import { motion } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
@@ -15,7 +15,7 @@ interface ProfileProps {
 }
 
 export default function Profile({ userId }: ProfileProps) {
-  const { signOut, user } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
   const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,23 +93,10 @@ export default function Profile({ userId }: ProfileProps) {
   return (
     <div className="p-6 space-y-8 bg-gradient-to-b from-orange-50 to-white min-h-screen pb-24">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/">
-            <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-          </Link>
-          <h1 className="text-3xl font-bold">Profile</h1>
-        </div>
-        <Link href="/settings">
-          <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white">
-            <Settings className="w-4 h-4 mr-2" />
-            Settings
-          </Button>
-        </Link>
-      </div>
+      <header className="text-center relative">
+        <h1 className="text-3xl font-bold mb-2">Profile</h1>
+        <p className="text-gray-600">Manage your taste preferences</p>
+      </header>
 
       {/* User Info Card */}
       <motion.section
@@ -382,24 +369,12 @@ export default function Profile({ userId }: ProfileProps) {
                 <Clock className="w-4 h-4 mr-2" />
                 My Meetings
               </Button>
-              <Button 
-                className="justify-start bg-orange-500 hover:bg-orange-600 text-white"
-                onClick={async () => {
-                  try {
-                    await signOut();
-                    router.push('/login');
-                  } catch (error) {
-                    console.error('Error signing out:', error);
-                  }
-                }}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
-              </Button>
             </div>
           </CardContent>
         </Card>
       </motion.section>
+
+      <BottomNav />
     </div>
   );
 }

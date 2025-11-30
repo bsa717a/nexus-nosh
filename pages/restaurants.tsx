@@ -3,7 +3,8 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, MapPin, Star, DollarSign, Clock, List, Grid } from 'lucide-react';
+import { MapPin, Star, DollarSign, Clock, List, Grid } from 'lucide-react';
+import BottomNav from '@/components/BottomNav';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
 import { Restaurant, UserRestaurantState } from '@/lib/types';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -310,15 +311,13 @@ function RestaurantsPageContent() {
       </Head>
       <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white p-6 pb-24">
         <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-            <Link href="/">
-              <Button size="sm" className="bg-orange-500 hover:bg-orange-600 text-white">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Dashboard
-              </Button>
-            </Link>
-            <h1 className="text-3xl font-bold text-gray-800 text-center md:text-left">Restaurants</h1>
-            <div className="flex flex-wrap items-center justify-end w-full md:w-auto gap-3">
+          {/* Header */}
+          <header className="text-center mb-6">
+            <h1 className="text-3xl font-bold mb-2">Restaurants</h1>
+            <p className="text-gray-600">Browse and rate your favorite spots</p>
+          </header>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
               <select
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
@@ -385,7 +384,6 @@ function RestaurantsPageContent() {
                   />
                 </span>
               </button>
-            </div>
           </div>
 
           {loading ? (
@@ -592,6 +590,8 @@ function RestaurantsPageContent() {
           )}
         </div>
       </div>
+
+      <BottomNav />
     </>
   );
 }
