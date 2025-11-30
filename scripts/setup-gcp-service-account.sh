@@ -38,7 +38,7 @@ fi
 echo -e "${BLUE}Granting IAM roles...${NC}"
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/appengine.admin" --quiet || true
+    --role="roles/appengine.deployer" --quiet || true
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/storage.admin" --quiet || true
