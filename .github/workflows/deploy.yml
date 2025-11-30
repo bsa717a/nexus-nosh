@@ -79,10 +79,17 @@ jobs:
 
       - name: Migrate traffic to new version
         run: |
-          # Get the latest deployed version
+          # Wait a moment for the version to be fully created
+          sleep 5
+          # Get the latest deployed version (most recently created)
           NEW_VERSION=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
-          echo "Migrating traffic to version: $NEW_VERSION"
+          echo "Latest version found: $NEW_VERSION"
+          echo "Migrating 100% traffic to version: $NEW_VERSION"
           gcloud app services set-traffic default --splits=$NEW_VERSION=1 --quiet
+          echo "✓ Traffic migration complete"
+          # Verify traffic split
+          CURRENT_TRAFFIC=$(gcloud app services describe default --format="value(split.allocations)" --quiet)
+          echo "Current traffic allocation: $CURRENT_TRAFFIC"
         env:
           CLOUDSDK_CORE_PROJECT: nexus-nosh
 
