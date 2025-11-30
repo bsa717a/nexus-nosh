@@ -54,3 +54,7 @@ ui-debug.log
 github-actions-key.json
 *.json.key
 
+# Next.js standalone build artifacts (copied to root during deployment)
+server.js
+.next/standalone/
+
