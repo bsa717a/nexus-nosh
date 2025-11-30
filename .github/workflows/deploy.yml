@@ -43,6 +43,14 @@ jobs:
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           NEXT_PUBLIC_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
 
+      - name: Prepare standalone build for deployment
+        run: |
+          # Copy standalone build to root (App Engine expects files at root)
+          cp -r .next/standalone/* .
+          cp -r .next/static .next/static || true
+          # Ensure app.yaml is in the deployment root
+          cp app.yaml . || true
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
