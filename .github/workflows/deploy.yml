@@ -77,3 +77,12 @@ jobs:
         env:
           CLOUDSDK_CORE_PROJECT: nexus-nosh
 
+      - name: Migrate traffic to new version
+        run: |
+          # Get the latest deployed version
+          NEW_VERSION=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
+          echo "Migrating traffic to version: $NEW_VERSION"
+          gcloud app services set-traffic default --splits=$NEW_VERSION=1 --quiet
+        env:
+          CLOUDSDK_CORE_PROJECT: nexus-nosh
+
