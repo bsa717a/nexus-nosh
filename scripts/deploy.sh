@@ -49,6 +49,21 @@ fi
 
 echo -e "${GREEN}✓ Build successful${NC}"
 
+# Prepare standalone build for deployment
+echo -e "\n📦 Preparing standalone build for deployment..."
+if [ -d ".next/standalone" ]; then
+    # Copy standalone build to root (App Engine expects files at root)
+    cp -r .next/standalone/* .
+    # Copy static assets
+    if [ -d ".next/static" ]; then
+        mkdir -p .next
+        cp -r .next/static .next/static
+    fi
+    echo -e "${GREEN}✓ Standalone build prepared${NC}"
+else
+    echo -e "${YELLOW}⚠️  Standalone build not found, deploying from root${NC}"
+fi
+
 # Deploy to App Engine
 echo -e "\n☁️  Deploying to Google Cloud App Engine..."
 gcloud app deploy --quiet
