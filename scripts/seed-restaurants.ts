@@ -310,7 +310,7 @@ async function seedRestaurants() {
       // Convert Date to Timestamp for Firestore
       const restaurantData = {
         ...restaurant,
-        createdAt: Timestamp.fromDate(restaurant.createdAt),
+        createdAt: Timestamp.fromDate(restaurant.createdAt ?? new Date()),
       };
       
       await addDoc(restaurantsRef, restaurantData);

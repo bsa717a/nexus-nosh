@@ -10,6 +10,7 @@ interface MapViewProps {
   height?: string;
   onRestaurantSelect?: (restaurant: Restaurant) => void;
   onBoundsChange?: (visibleRestaurants: Restaurant[]) => void;
+  onCenterChange?: (center: { lat: number; lng: number }) => void;
 }
 
 export interface MapViewHandle {
@@ -22,7 +23,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
   center, 
   height = '400px',
   onRestaurantSelect,
-  onBoundsChange
+  onBoundsChange,
+  onCenterChange
 }, ref) => {
   // Mapbox token with fallback (public token, safe to include)
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoiYnNhNzE3IiwiYSI6ImNtaG13YnZvczIxcHIybXB1N2E0NnJpcHcifQ.Z-AeF3-pt2ihl2uz71Lvxg';
@@ -44,30 +46,61 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
     }));
   }, [recommendations, restaurants]);
 
+  // Use a ref to store the latest displayItems so handleMapMove doesn't need to be recreated
+  const displayItemsRef = useRef(displayItems);
+  useEffect(() => {
+    displayItemsRef.current = displayItems;
+  }, [displayItems]);
+
+  // Use a ref to store the latest onBoundsChange callback
+  const onBoundsChangeRef = useRef(onBoundsChange);
+  useEffect(() => {
+    onBoundsChangeRef.current = onBoundsChange;
+  }, [onBoundsChange]);
+
+  // Use a ref to store the latest onCenterChange callback
+  const onCenterChangeRef = useRef(onCenterChange);
+  useEffect(() => {
+    onCenterChangeRef.current = onCenterChange;
+  }, [onCenterChange]);
+
   // Handle map bounds change to update visible restaurants
-  // Use useCallback to prevent infinite loops and memoize the function
+  // Use a stable callback that reads from refs to avoid infinite loops
   const handleMapMove = useCallback(() => {
-    if (!mapRef.current || !onBoundsChange) {
+    if (!mapRef.current) {
       return;
     }
 
     const map = mapRef.current.getMap();
     const bounds = map.getBounds();
+    const mapCenter = map.getCenter();
+    
+    // Check if bounds is available
+    if (!bounds) {
+      return;
+    }
 
-    // Filter restaurants that are within the visible bounds
-    const visibleRestaurants = displayItems
-      .filter(item => {
-        const { lat, lng } = item.restaurant.coordinates;
-        const isVisible = bounds.contains([lng, lat]);
-        return isVisible;
-      })
-      .map(item => item.restaurant);
+    // Notify parent of new center for loading restaurants in new area
+    if (onCenterChangeRef.current && mapCenter) {
+      onCenterChangeRef.current({ lat: mapCenter.lat, lng: mapCenter.lng });
+    }
 
-    onBoundsChange(visibleRestaurants);
-  }, [displayItems, onBoundsChange]);
+    // Filter restaurants that are within the visible bounds using the ref
+    if (onBoundsChangeRef.current) {
+      const visibleRestaurants = displayItemsRef.current
+        .filter(item => {
+          const { lat, lng } = item.restaurant.coordinates;
+          const isVisible = bounds.contains([lng, lat]);
+          return isVisible;
+        })
+        .map(item => item.restaurant);
+
+      onBoundsChangeRef.current(visibleRestaurants);
+    }
+  }, []); // Empty dependency array - function is stable and reads from refs
 
   // Hide POI labels when map loads
-  const onMapLoad = () => {
+  const onMapLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
     if (map) {
       // Hide all POI labels (points of interest)
@@ -83,22 +116,30 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         });
       }
 
-      // Initialize the visible restaurants list on map load
-      handleMapMove();
+      // Initialize the visible restaurants list on map load (only if onBoundsChange is provided)
+      // Use a small delay to ensure map is fully initialized
+      setTimeout(() => {
+        if (onBoundsChangeRef.current && displayItemsRef.current.length > 0) {
+          handleMapMove();
+        }
+      }, 100);
     }
-  };
-
-  // Update visible restaurants whenever displayItems changes
-  // Only update when displayItems actually changes, not on every render
-  useEffect(() => {
-    if (mapRef.current && onBoundsChange && displayItems.length > 0) {
-      handleMapMove();
-    }
-  }, [displayItems, onBoundsChange, handleMapMove]);
+  }, [handleMapMove]); // Only depend on handleMapMove which is stable
 
   // Default center to Saint George, Utah if not provided
   const defaultCenter = { lat: 37.0965, lng: -113.5684 };
   const mapCenter = center || defaultCenter;
+
+  // Fly to new center when the center prop changes
+  useEffect(() => {
+    if (mapRef.current && center) {
+      mapRef.current.flyTo({
+        center: [center.lng, center.lat],
+        zoom: 13,
+        duration: 1500,
+      });
+    }
+  }, [center?.lat, center?.lng]);
 
   // Expose method to focus on a restaurant
   useImperativeHandle(ref, () => ({
@@ -243,20 +284,24 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1 text-yellow-500 mb-2">
-                <Star className="w-4 h-4 fill-yellow-500" />
-                <span className="text-sm font-medium">
-                  {selectedRestaurant.rating.average.toFixed(1)}
-                </span>
-                <span className="text-xs text-gray-500">
-                  ({selectedRestaurant.rating.count})
-                </span>
-              </div>
+              {selectedRestaurant.rating?.average !== undefined && (
+                <div className="flex items-center gap-1 text-yellow-500 mb-2">
+                  <Star className="w-4 h-4 fill-yellow-500" />
+                  <span className="text-sm font-medium">
+                    {selectedRestaurant.rating?.average.toFixed(1)}
+                  </span>
+                  {selectedRestaurant.rating?.count !== undefined && (
+                    <span className="text-xs text-gray-500">
+                      ({selectedRestaurant.rating.count})
+                    </span>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-gray-600 mb-2">
                 {selectedRestaurant.address}
               </p>
               <div className="flex flex-wrap gap-1 mb-2">
-                {selectedRestaurant.cuisineType.slice(0, 2).map((cuisine) => (
+                {selectedRestaurant.cuisineType && Array.isArray(selectedRestaurant.cuisineType) && selectedRestaurant.cuisineType.slice(0, 2).map((cuisine) => (
                   <span
                     key={cuisine}
                     className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full"
@@ -265,9 +310,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                   </span>
                 ))}
               </div>
-              <div className="text-xs text-gray-500">
-                ${selectedRestaurant.priceRange.min} - ${selectedRestaurant.priceRange.max}
-              </div>
+              {selectedRestaurant.priceRange && (
+                <div className="text-xs text-gray-500">
+                  ${selectedRestaurant.priceRange.min} - ${selectedRestaurant.priceRange.max}
+                </div>
+              )}
             </div>
           </Popup>
         )}

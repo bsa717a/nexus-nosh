@@ -324,7 +324,7 @@ export async function seedRestaurants(force: boolean = false): Promise<{
     for (const restaurant of sampleRestaurants) {
       const restaurantData = {
         ...restaurant,
-        createdAt: Timestamp.fromDate(restaurant.createdAt),
+        createdAt: Timestamp.fromDate(restaurant.createdAt ?? new Date()),
       };
       
       const docRef = await addDoc(restaurantsRef, restaurantData);

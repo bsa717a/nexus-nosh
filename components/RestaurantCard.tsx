@@ -75,10 +75,10 @@ export default function RestaurantCard({ recommendation }: RestaurantCardProps) 
           <div className="flex items-center">
             <span className="text-yellow-500">★</span>
             <span className="ml-1 text-sm font-medium text-gray-700">
-              {restaurant.rating.average.toFixed(1)}
+              {restaurant.rating?.average?.toFixed(1) ?? 'N/A'}
             </span>
             <span className="ml-1 text-xs text-gray-500">
-              ({restaurant.rating.count})
+              ({restaurant.rating?.count ?? 0})
             </span>
           </div>
           <div className="text-sm text-gray-600">
@@ -116,13 +116,13 @@ export default function RestaurantCard({ recommendation }: RestaurantCardProps) 
         {/* Attributes */}
         <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between text-xs text-gray-600">
           <span>
-            {restaurant.attributes.serviceSpeed} service
+            {restaurant.attributes?.serviceSpeed ?? 'N/A'} service
           </span>
           <span>
-            {restaurant.attributes.privateBooths ? '✓ Private booths' : ''}
+            {restaurant.attributes?.privateBooths ? '✓ Private booths' : ''}
           </span>
           <span>
-            ${restaurant.priceRange.min}-${restaurant.priceRange.max}
+            ${restaurant.priceRange?.min ?? '?'}-${restaurant.priceRange?.max ?? '?'}
           </span>
         </div>
       </div>

@@ -132,18 +132,22 @@ export async function getPersonalizedRecommendations(
       const pref = activeProfile.preferences;
       const attr = restaurant.attributes;
 
-      // Quietness match
-      const quietnessDiff = Math.abs(pref.quietness - attr.quietness);
-      if (quietnessDiff < 20) {
-        score += 15;
-        reasons.push('Matches your preference for quietness');
+      // Quietness match (only if attributes available)
+      if (attr?.quietness !== undefined) {
+        const quietnessDiff = Math.abs(pref.quietness - attr.quietness);
+        if (quietnessDiff < 20) {
+          score += 15;
+          reasons.push('Matches your preference for quietness');
+        }
       }
 
-      // Price range match
-      const avgPrice = (restaurant.priceRange.min + restaurant.priceRange.max) / 2;
-      if (avgPrice >= pref.priceRange.min && avgPrice <= pref.priceRange.max) {
-        score += 10;
-        reasons.push('Within your price range');
+      // Price range match (only if priceRange available)
+      if (restaurant.priceRange?.min !== undefined && restaurant.priceRange?.max !== undefined) {
+        const avgPrice = (restaurant.priceRange.min + restaurant.priceRange.max) / 2;
+        if (avgPrice >= pref.priceRange.min && avgPrice <= pref.priceRange.max) {
+          score += 10;
+          reasons.push('Within your price range');
+        }
       }
 
       // Cuisine type match
@@ -155,8 +159,8 @@ export async function getPersonalizedRecommendations(
         reasons.push('Matches your cuisine preferences');
       }
 
-      // Meeting type match
-      if (meetingType && restaurant.attributes.idealMeetingTypes.includes(meetingType)) {
+      // Meeting type match (only if attributes available)
+      if (meetingType && attr?.idealMeetingTypes?.includes(meetingType)) {
         score += 20;
         reasons.push(`Perfect for ${meetingType.replace('-', ' ')}`);
       }
@@ -178,8 +182,8 @@ export async function getPersonalizedRecommendations(
         }
       }
 
-      // Rating boost
-      if (restaurant.rating.average >= 4) {
+      // Rating boost (only if rating available)
+      if (restaurant.rating?.average !== undefined && restaurant.rating.average >= 4) {
         score += 10;
         reasons.push('Highly rated');
       }
@@ -274,9 +278,13 @@ export async function getGroupRecommendations(
       const reasons = [...rec.reasons];
 
       // Check if all participants would like it
-      const quietnessMatch = Math.abs(pref.quietness - attr.quietness) < 25;
-      const priceMatch = (restaurant.priceRange.min + restaurant.priceRange.max) / 2 >= pref.priceRange.min &&
-                        (restaurant.priceRange.min + restaurant.priceRange.max) / 2 <= pref.priceRange.max;
+      const quietnessMatch = attr?.quietness !== undefined 
+        ? Math.abs(pref.quietness - attr.quietness) < 25 
+        : true;
+      const priceMatch = restaurant.priceRange?.min !== undefined && restaurant.priceRange?.max !== undefined
+        ? ((restaurant.priceRange.min + restaurant.priceRange.max) / 2 >= pref.priceRange.min &&
+           (restaurant.priceRange.min + restaurant.priceRange.max) / 2 <= pref.priceRange.max)
+        : true;
 
       if (quietnessMatch && priceMatch) {
         groupScore += 30;

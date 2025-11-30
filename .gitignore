@@ -50,3 +50,7 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 
+# GCP Service Account Keys (security)
+github-actions-key.json
+*.json.key
+

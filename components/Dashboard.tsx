@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { MapPin, Star, Users, Filter, Clock, User, LogOut } from 'lucide-react';
@@ -10,7 +9,7 @@ import { Restaurant, RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
-import { searchMapboxRestaurants } from '@/lib/services/mapbox/mapboxSearchService';
+import { searchMapboxRestaurants, geocodeZipCode } from '@/lib/services/mapbox/mapboxSearchService';
 import { useAuth } from '@/lib/auth/useAuth';
 import MapView, { MapViewHandle } from '@/components/MapView';
 
@@ -33,21 +32,15 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | undefined>(userLocation);
   const [showMapboxData, setShowMapboxData] = useState(true);
   const [visibleRestaurants, setVisibleRestaurants] = useState<Restaurant[]>([]);
-
-  useEffect(() => {
-    loadData();
-  }, [userId, userLocation]);
-
-  // Update map center when userLocation changes
-  useEffect(() => {
-    if (userLocation) {
-      setMapCenter(userLocation);
-    }
-  }, [userLocation]);
+  const [lastFetchedCenter, setLastFetchedCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [loadingMapbox, setLoadingMapbox] = useState(false);
+  const [geocodingZip, setGeocodingZip] = useState(false);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const zipGeocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Removed excessive debug logging that could cause performance issues
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [recs, profile, restaurants] = await Promise.all([
@@ -63,13 +56,77 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       if (userLocation) {
         const mapboxRests = await searchMapboxRestaurants(userLocation, 10000, 25);
         setMapboxRestaurants(mapboxRests);
+        setLastFetchedCenter(userLocation);
       }
     } catch (error) {
       console.error('[Dashboard] Error loading data:', error);
     } finally {
       setLoading(false);
     }
-  }
+  }, [userId, userLocation]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Update map center when userLocation changes
+  useEffect(() => {
+    if (userLocation) {
+      setMapCenter(userLocation);
+    }
+  }, [userLocation]);
+
+  // Handle map center changes - fetch new restaurants when map moves significantly
+  const handleMapCenterChange = useCallback(async (newCenter: { lat: number; lng: number }) => {
+    if (!showMapboxData) return;
+
+    // Calculate distance from last fetched center
+    const FETCH_THRESHOLD_KM = 2; // Fetch new data if moved more than 2km
+    
+    if (lastFetchedCenter) {
+      const distance = calculateDistance(
+        lastFetchedCenter.lat, lastFetchedCenter.lng,
+        newCenter.lat, newCenter.lng
+      );
+      
+      // Don't fetch if we haven't moved far enough
+      if (distance < FETCH_THRESHOLD_KM) {
+        return;
+      }
+    }
+
+    // Debounce the API call
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+
+    fetchTimeoutRef.current = setTimeout(async () => {
+      setLoadingMapbox(true);
+      try {
+        const mapboxRests = await searchMapboxRestaurants(newCenter, 10000, 25);
+        setMapboxRestaurants(prev => {
+          // Merge new restaurants with existing ones, avoiding duplicates by ID
+          const existingIds = new Set(prev.map(r => r.id));
+          const newRests = mapboxRests.filter(r => !existingIds.has(r.id));
+          return [...prev, ...newRests];
+        });
+        setLastFetchedCenter(newCenter);
+      } catch (error) {
+        console.error('[Dashboard] Error loading Mapbox restaurants for new area:', error);
+      } finally {
+        setLoadingMapbox(false);
+      }
+    }, 500); // 500ms debounce
+  }, [showMapboxData, lastFetchedCenter]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Helper function to calculate distance between two points
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -261,6 +318,56 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     }
   };
 
+  // Handle ZIP code input - geocode and move map to that location
+  const handleZipCodeChange = useCallback(async (newZip: string) => {
+    setZipFilter(newZip);
+
+    // Clear any pending geocode request
+    if (zipGeocodeTimeoutRef.current) {
+      clearTimeout(zipGeocodeTimeoutRef.current);
+    }
+
+    // Only geocode if it looks like a valid ZIP code (5 digits for US)
+    const cleanZip = newZip.trim();
+    if (cleanZip.length < 5) {
+      return;
+    }
+
+    // Debounce the geocoding request
+    zipGeocodeTimeoutRef.current = setTimeout(async () => {
+      setGeocodingZip(true);
+      try {
+        const coords = await geocodeZipCode(cleanZip);
+        if (coords) {
+          // Move map to the ZIP code location
+          setMapCenter(coords);
+          // Clear existing Mapbox restaurants so new ones load for this area
+          setMapboxRestaurants([]);
+          setLastFetchedCenter(null);
+          // Fetch restaurants for the new location
+          setLoadingMapbox(true);
+          const mapboxRests = await searchMapboxRestaurants(coords, 10000, 25);
+          setMapboxRestaurants(mapboxRests);
+          setLastFetchedCenter(coords);
+          setLoadingMapbox(false);
+        }
+      } catch (error) {
+        console.error('[Dashboard] Error geocoding ZIP code:', error);
+      } finally {
+        setGeocodingZip(false);
+      }
+    }, 600); // 600ms debounce for ZIP code input
+  }, []);
+
+  // Cleanup ZIP geocode timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (zipGeocodeTimeoutRef.current) {
+        clearTimeout(zipGeocodeTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div className="p-6 space-y-8 bg-gradient-to-b from-orange-50 to-white min-h-screen pb-24">
       <header className="text-center relative">
@@ -314,7 +421,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                         <IconComponent className={`w-4 h-4 ${matchIcon.color} ${matchIcon.fillColor}`} />
                       </div>
                       <p className="text-gray-500 text-xs mb-1">
-                        {rec.restaurant.cuisineType.slice(0, 2).join(' • ')}
+                        {rec.restaurant.cuisineType && Array.isArray(rec.restaurant.cuisineType) ? rec.restaurant.cuisineType.slice(0, 2).join(' • ') : 'Restaurant'}
                       </p>
                       <a
                         href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.restaurant.address)}`}
@@ -372,7 +479,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                     <span className="font-semibold text-gray-800">{personalMatch.restaurant.name}</span>
                   </div>
                   <p className="text-xs text-gray-500 mb-2">
-                    {personalMatch.restaurant.cuisineType.slice(0, 2).join(' • ')}
+                    {personalMatch.restaurant.cuisineType && Array.isArray(personalMatch.restaurant.cuisineType) ? personalMatch.restaurant.cuisineType.slice(0, 2).join(' • ') : 'Restaurant'}
                   </p>
                   <a
                     href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(personalMatch.restaurant.address)}`}
@@ -411,7 +518,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                     <span className="font-semibold text-gray-800">{friendPicks[0].restaurant.name}</span>
                   </div>
                   <p className="text-xs text-gray-500 mb-2">
-                    {friendPicks[0].restaurant.cuisineType.slice(0, 2).join(' • ')}
+                    {friendPicks[0].restaurant.cuisineType && Array.isArray(friendPicks[0].restaurant.cuisineType) ? friendPicks[0].restaurant.cuisineType.slice(0, 2).join(' • ') : 'Restaurant'}
                   </p>
                   <a
                     href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(friendPicks[0].restaurant.address)}`}
@@ -462,13 +569,20 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                 >
                   {showMapboxData ? "All Restaurants" : "My Restaurants"}
                 </Button>
-                <input
-                  type="text"
-                  placeholder="ZIP Code"
-                  value={zipFilter}
-                  onChange={(e) => setZipFilter(e.target.value)}
-                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 w-24"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="ZIP Code"
+                    value={zipFilter}
+                    onChange={(e) => handleZipCodeChange(e.target.value)}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 w-24"
+                  />
+                  {geocodingZip && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-orange-500 border-t-transparent"></div>
+                    </div>
+                  )}
+                </div>
                 <Button 
                   variant="outline" 
                   size="sm"
@@ -480,14 +594,21 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               </div>
             </div>
             <div className="grid md:grid-cols-[1fr_280px] gap-3">
-              <div className="rounded-xl overflow-hidden h-[600px]">
+              <div className="rounded-xl overflow-hidden h-[600px] relative">
                 <MapView 
                   ref={mapRef}
                   restaurants={filteredAndSortedRestaurants}
                   center={mapCenter || { lat: 37.0965, lng: -113.5684 }}
                   height="100%"
                   onBoundsChange={setVisibleRestaurants}
+                  onCenterChange={handleMapCenterChange}
                 />
+                {loadingMapbox && (
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-white/90 px-3 py-1.5 rounded-full shadow-md flex items-center gap-2 z-10">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-orange-500 border-t-transparent"></div>
+                    <span className="text-sm text-gray-600">Loading restaurants...</span>
+                  </div>
+                )}
               </div>
               <div className="max-h-[600px] overflow-y-auto space-y-2 pr-2">
                 {visibleRestaurants.length > 0 ? (
@@ -501,7 +622,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                     >
                       <p className="font-semibold text-gray-800 text-sm">{restaurant.name}</p>
                       <p className="text-xs text-gray-500 mb-1">
-                        {restaurant.cuisineType[0] || 'Restaurant'}
+                        {restaurant.cuisineType && Array.isArray(restaurant.cuisineType) && restaurant.cuisineType.length > 0 ? restaurant.cuisineType[0] : 'Restaurant'}
                         {restaurant.attributes?.atmosphere && ` • ${restaurant.attributes.atmosphere}`}
                       </p>
                       <a
@@ -605,22 +726,30 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
 
                {/* Action Bar */}
                <div className="fixed bottom-6 inset-x-0 flex justify-center z-50 gap-4">
-                 <Link href="/profile">
-                   <Button
-                     className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white"
-                   >
-                     <User className="w-5 h-5 mr-2" />
-                     Profile
-                   </Button>
-                 </Link>
-                 <Link href="/restaurants">
-                   <Button 
-                     className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white"
-                   >
-                     <MapPin className="w-5 h-5 mr-2" />
-                     Restaurants
-                   </Button>
-                 </Link>
+                 <Button
+                   type="button"
+                   onClick={() => {
+                     if (typeof window !== 'undefined') {
+                       window.location.href = '/profile';
+                     }
+                   }}
+                   className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                 >
+                   <User className="w-5 h-5 mr-2" />
+                   Profile
+                 </Button>
+                 <Button 
+                   type="button"
+                   onClick={() => {
+                     if (typeof window !== 'undefined') {
+                       window.location.href = '/restaurants';
+                     }
+                   }}
+                   className="rounded-full shadow-lg px-6 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                 >
+                   <MapPin className="w-5 h-5 mr-2" />
+                   Restaurants
+                 </Button>
                  <Button className="rounded-full shadow-lg px-8 py-6 text-lg bg-orange-500 hover:bg-orange-600 text-white">
                    + Add Restaurant
                  </Button>

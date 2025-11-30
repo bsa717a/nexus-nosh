@@ -161,6 +161,57 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 /**
+ * Geocode a ZIP code to get its coordinates
+ * @param zipCode The ZIP code to geocode
+ * @returns Coordinates of the ZIP code center, or null if not found
+ */
+export async function geocodeZipCode(zipCode: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    if (!MAPBOX_TOKEN) {
+      console.error('[MapboxSearch] No API token found!');
+      return null;
+    }
+
+    // Clean up the ZIP code (remove spaces, ensure it's just the code)
+    const cleanZip = zipCode.trim();
+    if (!cleanZip || cleanZip.length < 3) {
+      return null;
+    }
+
+    // Use Mapbox Geocoding API to find the ZIP code
+    // Adding "USA" to improve accuracy for US ZIP codes
+    const query = encodeURIComponent(`${cleanZip} USA`);
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?types=postcode&limit=1&access_token=${MAPBOX_TOKEN}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.error('[MapboxSearch] Geocoding error:', response.status, response.statusText);
+      return null;
+    }
+
+    const data = await response.json();
+    
+    if (!data.features || data.features.length === 0) {
+      console.warn('[MapboxSearch] No results for ZIP code:', cleanZip);
+      return null;
+    }
+
+    const feature = data.features[0];
+    const [lng, lat] = feature.center;
+
+    return { lat, lng };
+  } catch (error) {
+    console.error('[MapboxSearch] Error geocoding ZIP code:', error);
+    return null;
+  }
+}
+
+/**
  * Get detailed information about a specific place by Mapbox ID
  * (For future enhancement if needed)
  */

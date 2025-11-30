@@ -474,10 +474,14 @@ function RestaurantsPageContent() {
                             </button>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700">
-                            <div className="flex items-center gap-1 text-yellow-500">
-                              <Star className="w-4 h-4 fill-yellow-500" />
-                              <span>{restaurant.rating.average.toFixed(1)}</span>
-                            </div>
+                            {restaurant.rating?.average !== undefined ? (
+                              <div className="flex items-center gap-1 text-yellow-500">
+                                <Star className="w-4 h-4 fill-yellow-500" />
+                                <span>{restaurant.rating.average.toFixed(1)}</span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">N/A</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">
                             <button
@@ -492,10 +496,10 @@ function RestaurantsPageContent() {
                             {restaurant.cuisineType.slice(0, 3).join(', ') || '—'}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">
-                            {restaurant.attributes.quietness}/100
+                            {restaurant.attributes?.quietness ?? 'N/A'}/100
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600 capitalize">
-                            {restaurant.attributes.atmosphere}
+                            {restaurant.attributes?.atmosphere ?? 'N/A'}
                           </td>
                         </tr>
                         {expandedRestaurants[restaurant.id] && (
@@ -524,10 +528,12 @@ function RestaurantsPageContent() {
                             >
                               {restaurant.name}
                             </button>
-                            <div className="flex items-center gap-1 text-yellow-500">
-                              <Star className="w-4 h-4 fill-yellow-500" />
-                              <span className="text-sm font-medium">{restaurant.rating.average.toFixed(1)}</span>
-                            </div>
+                            {restaurant.rating?.average !== undefined && (
+                              <div className="flex items-center gap-1 text-yellow-500">
+                                <Star className="w-4 h-4 fill-yellow-500" />
+                                <span className="text-sm font-medium">{restaurant.rating.average.toFixed(1)}</span>
+                              </div>
+                            )}
                           </div>
                           
                           <div className="flex items-center text-gray-600 text-sm mb-3">
@@ -556,22 +562,24 @@ function RestaurantsPageContent() {
                             <div className="flex items-center">
                               <DollarSign className="w-4 h-4 mr-1" />
                               <span>
-                                ${restaurant.priceRange.min} - ${restaurant.priceRange.max}
+                                {restaurant.priceRange ? `$${restaurant.priceRange.min} - $${restaurant.priceRange.max}` : 'N/A'}
                               </span>
                             </div>
                             <div className="flex items-center">
                               <Clock className="w-4 h-4 mr-1" />
-                              <span className="capitalize">{restaurant.attributes.serviceSpeed}</span>
+                              <span className="capitalize">{restaurant.attributes?.serviceSpeed ?? 'N/A'}</span>
                             </div>
                           </div>
 
-                          <div className="text-xs text-gray-500">
-                            <p>Quietness: {restaurant.attributes.quietness}/100</p>
-                            <p className="capitalize">Atmosphere: {restaurant.attributes.atmosphere}</p>
-                            {restaurant.attributes.privateBooths && (
-                              <p className="text-green-600">✓ Private booths available</p>
-                            )}
-                          </div>
+                          {restaurant.attributes && (
+                            <div className="text-xs text-gray-500">
+                              <p>Quietness: {restaurant.attributes.quietness ?? 'N/A'}/100</p>
+                              <p className="capitalize">Atmosphere: {restaurant.attributes.atmosphere ?? 'N/A'}</p>
+                              {restaurant.attributes.privateBooths && (
+                                <p className="text-green-600">✓ Private booths available</p>
+                              )}
+                            </div>
+                          )}
 
                           {expandedRestaurants[restaurant.id] && renderDetails(restaurant)}
                         </div>

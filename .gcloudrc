@@ -1,0 +1,22 @@
+#!/bin/bash
+# Auto-activate nexus-nosh GCP project for this workspace
+# Source this file or run: source .gcloudrc
+
+# Activate the nexusnosh-workspace configuration
+gcloud config configurations activate nexusnosh-workspace 2>/dev/null || {
+    echo "Creating nexusnosh-workspace configuration..."
+    gcloud config configurations create nexusnosh-workspace
+    gcloud config set account derek.fowler@gmail.com
+    gcloud config set project nexus-nosh
+}
+
+# Ensure project is set correctly
+CURRENT_PROJECT=$(gcloud config get-value project 2>/dev/null)
+if [ "$CURRENT_PROJECT" != "nexus-nosh" ]; then
+    echo "Setting GCP project to nexus-nosh..."
+    gcloud config set project nexus-nosh
+fi
+
+export GCP_PROJECT_ID="nexus-nosh"
+export GCP_PROJECT_NAME="Nexus-Nosh"
+

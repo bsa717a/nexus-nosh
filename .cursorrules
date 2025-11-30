@@ -1,0 +1,111 @@
+# Nexus Nosh Cursor Rules
+
+## Branch Management
+
+### Branch Cleanup After Merge
+**REQUIRED:** Always delete branches immediately after merging into `main`.
+
+When merging a feature branch into `main`:
+1. **After merging, ALWAYS delete the branch:**
+   ```bash
+   # Delete local branch
+   git branch -d <branch-name>
+   
+   # Delete remote branch
+   git push origin --delete <branch-name>
+   
+   # Or both at once:
+   git branch -d <branch-name> && git push origin --delete <branch-name>
+   ```
+
+2. **Or use the cleanup script:**
+   ```bash
+   ./scripts/cleanup-merged-branches.sh
+   ```
+
+**CRITICAL:** Never leave merged branches in the repository. They must be deleted immediately after merging to keep the repository clean. Only keep branches that are actively being worked on.
+
+### Branch Naming Convention
+- Feature branches: `feature/<description>` or descriptive names like `Mapbox-As-Source-Of-Truth`
+- Bug fixes: `fix/<description>` or `Fix-<Description>`
+- Hotfixes: `hotfix/<description>`
+
+## Code Standards
+
+### TypeScript
+- Always use strict null checks for optional properties (`rating?`, `attributes?`, `priceRange?`)
+- Use optional chaining (`?.`) and nullish coalescing (`??`) when accessing optional properties
+- Never log entire arrays/objects in production code - use `.length` or specific properties
+
+### React/Next.js
+- Use `useCallback` for functions passed to `useEffect` dependencies to prevent infinite loops
+- Prefer `onMoveEnd`/`onZoomEnd` over `onMove`/`onZoom` for map interactions to reduce handler calls
+- Remove excessive `console.log` statements before committing
+
+### Performance
+- Debounce expensive operations (map movements, search inputs)
+- Memoize expensive computations with `useMemo`
+- Avoid logging large objects/arrays that could overwhelm the language server
+
+## GCP Deployment
+
+### Project Configuration
+- Always use the `nexus-nosh` GCP project
+- Activate workspace config: `gcloud config configurations activate nexusnosh-workspace`
+- Or run: `source activate-gcp.sh`
+
+### Before Deploying
+1. Fix all TypeScript errors (`npm run build` must succeed)
+2. Remove platform-specific dependencies (e.g., `@next/swc-darwin-arm64`)
+3. Test build locally before deploying
+
+## Git Workflow
+
+### Commits
+- Use descriptive commit messages
+- Include context in commit messages (e.g., "Fix Cursor crashes: resolve infinite loops...")
+
+### Merging
+- Always merge feature branches into `main`
+- **MANDATORY:** Delete the branch immediately after merging (see Branch Cleanup section above)
+- Use `--no-edit` flag when merging to keep merge commit messages clean
+- **Workflow:**
+  1. Merge branch into main: `git merge <branch-name>`
+  2. Delete branch immediately: `git branch -d <branch-name> && git push origin --delete <branch-name>`
+  3. Or run: `./scripts/cleanup-merged-branches.sh`
+
+### Pre-Merge Cleanup Checklist
+**BEFORE merging into `main`, clean up:**
+1. **Diagnostic files**: Remove temporary debug/documentation files:
+   - `*FIXES*.md`, `*DEBUG*.md`, `*DIAGNOSTIC*.md`
+   - Temporary test files
+   - One-off diagnostic scripts
+2. **Console logs**: Remove or convert to proper logging:
+   - `console.log()` statements (keep only essential error logging)
+   - `console.debug()` statements
+   - Excessive `console.warn()` statements
+   - Logging entire objects/arrays (use `.length` or specific properties)
+3. **Commented code**: Remove commented-out code blocks
+4. **TODO comments**: Remove completed TODOs or move to issues
+5. **Test endpoints**: Remove temporary API routes or test pages
+6. **Environment files**: Ensure `.env*.local` files are gitignored
+
+**Run cleanup script before merging:**
+```bash
+# Check for issues
+./scripts/pre-merge-cleanup.sh
+
+# Auto-remove diagnostic files
+./scripts/pre-merge-cleanup.sh --fix
+
+# Check console.log statements
+./scripts/remove-console-logs.sh --dry-run
+```
+
+**Note:** The pre-merge hook will automatically run these checks when merging into `main`.
+
+## Firebase/Firestore
+- Project ID: `nexus-nosh`
+- Always check for optional fields before accessing (`rating?.average`, `attributes?.quietness`)
+- Use fallback values for optional properties in UI components
+
