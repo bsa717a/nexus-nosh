@@ -74,3 +74,4 @@ async function clearAllRestaurants() {
 // Run the cleanup
 clearAllRestaurants();
 
+
