@@ -213,7 +213,6 @@ export async function geocodeZipCode(zipCode: string): Promise<{ lat: number; ln
 
 /**
  * Get detailed information about a specific place by Mapbox ID
- * (For future enhancement if needed)
  */
 export async function getMapboxPlaceDetails(mapboxId: string): Promise<Partial<Restaurant> | null> {
   try {
@@ -223,6 +222,7 @@ export async function getMapboxPlaceDetails(mapboxId: string): Promise<Partial<R
     }
     
     const url = `https://api.mapbox.com/search/searchbox/v1/retrieve/${mapboxId}?access_token=${MAPBOX_TOKEN}`;
+    console.log('[MapboxSearch] Fetching place details from:', url);
     
     const response = await fetch(url, {
       headers: {
@@ -231,26 +231,48 @@ export async function getMapboxPlaceDetails(mapboxId: string): Promise<Partial<R
     });
     
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[MapboxSearch] API error:', response.status, response.statusText, errorText);
       return null;
     }
     
     const data: { features: MapboxFeature[] } = await response.json();
-    const feature = data.features[0];
+    console.log('[MapboxSearch] Received data:', data);
+    
+    const feature = data.features?.[0];
     
     if (!feature) {
+      console.warn('[MapboxSearch] No feature found in response');
       return null;
     }
     
     const [lng, lat] = feature.geometry.coordinates;
     
-    return {
+    // Extract address from properties
+    const address = feature.properties.full_address || 
+                   feature.properties.place_formatted || 
+                   feature.properties.address ||
+                   '';
+    
+    // Determine cuisine type from POI categories
+    const categories = feature.properties.poi_category || [];
+    const cuisineType = categories.length > 0 
+      ? categories.slice(0, 3) 
+      : ['Restaurant'];
+    
+    const result = {
       name: feature.properties.name_preferred || feature.properties.name,
-      address: feature.properties.full_address || feature.properties.place_formatted || '',
+      address,
       coordinates: {
         lat,
         lng,
       },
+      cuisineType,
+      source: 'mapbox' as const,
     };
+    
+    console.log('[MapboxSearch] Returning restaurant details:', result);
+    return result;
   } catch (error) {
     console.error('[MapboxSearch] Error fetching place details:', error);
     return null;

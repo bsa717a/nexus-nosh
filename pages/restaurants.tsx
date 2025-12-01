@@ -1,11 +1,12 @@
-import { useState, useEffect, Fragment, useRef, useMemo } from 'react';
+import { useState, useEffect, Fragment, useRef, useMemo, useCallback } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MapPin, Star, DollarSign, Clock, List, Grid } from 'lucide-react';
+import { MapPin, Star, DollarSign, Clock, List, Grid, Navigation } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
+import { searchMapboxRestaurants, geocodeZipCode } from '@/lib/services/mapbox/mapboxSearchService';
 import { Restaurant, UserRestaurantState } from '@/lib/types';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth/useAuth';
@@ -14,9 +15,17 @@ import {
   getUserRestaurantStates,
   upsertUserRestaurantState,
 } from '@/lib/services/restaurants/userRestaurantStateService';
+import AddToListButton from '@/components/AddToListButton';
+import MapView, { MapViewHandle } from '@/components/MapView';
 
 function RestaurantsPageContent() {
-  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [allRestaurants, setAllRestaurants] = useState<Restaurant[]>([]);
+  const [mapboxRestaurants, setMapboxRestaurants] = useState<Restaurant[]>([]);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | undefined>();
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | undefined>();
+  const [visibleRestaurants, setVisibleRestaurants] = useState<Restaurant[]>([]);
+  const [lastFetchedCenter, setLastFetchedCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [loadingMapbox, setLoadingMapbox] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isListView, setIsListView] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -30,6 +39,9 @@ function RestaurantsPageContent() {
   const { user } = useAuth();
   const isAuthenticated = Boolean(user);
   const noteSaveTimeouts = useRef<Record<string, NodeJS.Timeout>>({});
+  const mapRef = useRef<MapViewHandle>(null);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const zipGeocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     return () => {
@@ -37,14 +49,167 @@ function RestaurantsPageContent() {
     };
   }, []);
 
+  // Get user location
   useEffect(() => {
-    loadRestaurants();
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.error('[Restaurants] Error getting location:', error);
+          // Fallback to Saint George, Utah
+          setUserLocation({ lat: 37.0965, lng: -113.5684 });
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 300000, // Cache for 5 minutes
+        }
+      );
+    } else {
+      // Fallback to Saint George, Utah
+      setUserLocation({ lat: 37.0965, lng: -113.5684 });
+    }
   }, []);
+
+  useEffect(() => {
+    if (userLocation !== undefined) {
+      setMapCenter(userLocation);
+      loadRestaurants();
+    }
+  }, [userLocation]);
+
+  // Update map center when userLocation changes
+  useEffect(() => {
+    if (userLocation) {
+      setMapCenter(userLocation);
+    }
+  }, [userLocation]);
+
+  // Helper function to calculate distance between two points
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Handle map center changes - fetch new restaurants when map moves significantly
+  const handleMapCenterChange = useCallback(async (newCenter: { lat: number; lng: number }) => {
+    // Calculate distance from last fetched center
+    const FETCH_THRESHOLD_KM = 2; // Fetch new data if moved more than 2km
+    
+    if (lastFetchedCenter) {
+      const distance = calculateDistance(
+        lastFetchedCenter.lat, lastFetchedCenter.lng,
+        newCenter.lat, newCenter.lng
+      );
+      
+      // Don't fetch if we haven't moved far enough
+      if (distance < FETCH_THRESHOLD_KM) {
+        return;
+      }
+    }
+
+    // Debounce the API call
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+
+    fetchTimeoutRef.current = setTimeout(async () => {
+      setLoadingMapbox(true);
+      try {
+        const mapboxRests = await searchMapboxRestaurants(newCenter, 10000, 50);
+        setMapboxRestaurants(prev => {
+          // Merge new restaurants with existing ones, avoiding duplicates by ID
+          const existingIds = new Set(prev.map(r => r.id));
+          const newRests = mapboxRests.filter(r => !existingIds.has(r.id));
+          return [...prev, ...newRests];
+        });
+        setLastFetchedCenter(newCenter);
+      } catch (error) {
+        console.error('[Restaurants] Error loading Mapbox restaurants for new area:', error);
+      } finally {
+        setLoadingMapbox(false);
+      }
+    }, 500); // 500ms debounce
+  }, [lastFetchedCenter]);
+
+  // Handle map bounds change - update visible restaurants list
+  const handleBoundsChange = useCallback((visible: Restaurant[]) => {
+    setVisibleRestaurants(visible);
+  }, []);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+      if (zipGeocodeTimeoutRef.current) {
+        clearTimeout(zipGeocodeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Combine database and Mapbox restaurants (similar to Dashboard)
+  const combinedRestaurants = useMemo(() => {
+    const restaurantMap = new Map<string, Restaurant>();
+    
+    // First add database restaurants
+    allRestaurants.forEach(restaurant => {
+      if (restaurant?.name && restaurant?.coordinates?.lat && restaurant?.coordinates?.lng) {
+        const key = `${restaurant.name.toLowerCase()}-${restaurant.coordinates.lat.toFixed(4)}-${restaurant.coordinates.lng.toFixed(4)}`;
+        restaurantMap.set(key, { ...restaurant, source: 'database' as const });
+      }
+    });
+    
+    // Then add/override with Mapbox restaurants (prefer fresh data)
+    mapboxRestaurants.forEach(mapboxRest => {
+      if (mapboxRest?.name && mapboxRest?.coordinates?.lat && mapboxRest?.coordinates?.lng) {
+        const key = `${mapboxRest.name.toLowerCase()}-${mapboxRest.coordinates.lat.toFixed(4)}-${mapboxRest.coordinates.lng.toFixed(4)}`;
+        const existing = restaurantMap.get(key);
+        
+        if (existing) {
+          // Merge: Keep Mapbox name/address/coords, but preserve DB enrichments
+          restaurantMap.set(key, {
+            ...existing,
+            id: mapboxRest.id,
+            name: mapboxRest.name,
+            address: mapboxRest.address,
+            coordinates: mapboxRest.coordinates,
+            source: 'mapbox' as const,
+          });
+        } else {
+          // New restaurant from Mapbox
+          restaurantMap.set(key, mapboxRest);
+        }
+      }
+    });
+    
+    return Array.from(restaurantMap.values());
+  }, [allRestaurants, mapboxRestaurants]);
+
+  // Use visible restaurants from map if available, otherwise use all combined restaurants
+  const restaurantsToFilter = useMemo(() => {
+    // If map has visible restaurants (user has interacted with map), use those
+    // Otherwise use all combined restaurants
+    return visibleRestaurants.length > 0 ? visibleRestaurants : combinedRestaurants;
+  }, [visibleRestaurants, combinedRestaurants]);
 
   const filteredRestaurants = useMemo(() => {
     const trimmedZip = zipFilter.trim().toLowerCase();
 
-    return restaurants.filter((restaurant) => {
+    return restaurantsToFilter.filter((restaurant) => {
       const state = userRestaurantStates[restaurant.id];
 
       if (statusFilter === 'wantToGo' && !state?.wantToGo) {
@@ -56,7 +221,7 @@ function RestaurantsPageContent() {
       }
 
       if (trimmedZip) {
-        const addressMatch = restaurant.address.toLowerCase().includes(trimmedZip);
+        const addressMatch = restaurant?.address?.toLowerCase().includes(trimmedZip);
         if (!addressMatch) {
           return false;
         }
@@ -64,7 +229,7 @@ function RestaurantsPageContent() {
 
       return true;
     });
-  }, [restaurants, userRestaurantStates, statusFilter, zipFilter]);
+  }, [restaurantsToFilter, userRestaurantStates, statusFilter, zipFilter]);
 
   useEffect(() => {
     async function loadViewPreference() {
@@ -291,12 +456,25 @@ function RestaurantsPageContent() {
   }
 
   async function loadRestaurants() {
+    if (userLocation === undefined) {
+      console.log('[Restaurants] Waiting for user location...');
+      return;
+    }
+    
+    console.log('[Restaurants] Loading restaurants for location:', userLocation);
     setLoading(true);
     try {
-      const data = await getAllRestaurants(100);
-      setRestaurants(data);
+      // Load database restaurants
+      const dbRestaurants = await getAllRestaurants(100);
+      console.log('[Restaurants] Loaded database restaurants:', dbRestaurants.length);
+      setAllRestaurants(dbRestaurants);
+
+      // Load Mapbox restaurants based on user location
+      const mapboxRests = await searchMapboxRestaurants(userLocation, 10000, 50);
+      console.log('[Restaurants] Loaded Mapbox restaurants:', mapboxRests.length);
+      setMapboxRestaurants(mapboxRests);
     } catch (error) {
-      console.error('Error loading restaurants:', error);
+      console.error('[Restaurants] Error loading restaurants:', error);
     } finally {
       setLoading(false);
     }
@@ -386,24 +564,71 @@ function RestaurantsPageContent() {
               </button>
           </div>
 
+          {/* Map Section */}
+          {mapCenter && (
+            <Card className="shadow-md rounded-2xl overflow-hidden mb-6">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                  <h3 className="font-semibold text-gray-800">Explore Restaurants</h3>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                              const newLocation = {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                              };
+                              setMapCenter(newLocation);
+                            },
+                            (error) => {
+                              console.error('Error getting location:', error);
+                            }
+                          );
+                        }
+                      }}
+                      className="rounded-lg border-gray-200"
+                    >
+                      <Navigation className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="relative h-[400px]">
+                  <MapView 
+                    ref={mapRef}
+                    restaurants={combinedRestaurants}
+                    center={mapCenter}
+                    height="100%"
+                    onBoundsChange={handleBoundsChange}
+                    onCenterChange={handleMapCenterChange}
+                  />
+                  {loadingMapbox && (
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-white/95 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 z-10">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-orange-500 border-t-transparent"></div>
+                      <span className="text-sm font-medium text-gray-600">Finding restaurants...</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {loading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
               <p className="mt-4 text-gray-600">Loading restaurants...</p>
             </div>
-          ) : restaurants.length === 0 ? (
+          ) : combinedRestaurants.length === 0 ? (
             <Card className="shadow-md rounded-2xl p-8">
               <CardContent>
                 <div className="text-center py-12">
                   <p className="text-xl text-gray-600 mb-4">No restaurants found.</p>
                   <p className="text-gray-500 mb-6">
-                    Restaurants need to be seeded first. Go to the admin page to seed restaurant data.
+                    {loading ? 'Loading restaurants...' : 'No restaurants found in your area. Try moving the map or adjusting your location.'}
                   </p>
-                  <Link href="/admin/seed-restaurants">
-                    <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-                      Seed Restaurants
-                    </Button>
-                  </Link>
                 </div>
               </CardContent>
             </Card>
@@ -463,13 +688,16 @@ function RestaurantsPageContent() {
                         <Fragment key={restaurant.id}>
                         <tr className="hover:bg-orange-50 transition">
                           <td className="px-4 py-3 text-sm font-medium text-gray-800">
-                            <button
-                              type="button"
-                              onClick={() => toggleExpanded(restaurant.id)}
-                              className="text-left text-orange-600 hover:underline"
-                            >
-                              {restaurant.name}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(restaurant.id)}
+                                className="text-left text-orange-600 hover:underline"
+                              >
+                                {restaurant.name}
+                              </button>
+                              <AddToListButton restaurantId={restaurant.id} restaurant={restaurant} size="sm" />
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-700">
                             {restaurant.rating?.average !== undefined ? (
@@ -522,16 +750,19 @@ function RestaurantsPageContent() {
                             <button
                               type="button"
                               onClick={() => toggleExpanded(restaurant.id)}
-                              className="text-left text-xl font-semibold text-orange-600 hover:underline"
+                              className="text-left text-xl font-semibold text-orange-600 hover:underline flex-1"
                             >
                               {restaurant.name}
                             </button>
-                            {restaurant.rating?.average !== undefined && (
-                              <div className="flex items-center gap-1 text-yellow-500">
-                                <Star className="w-4 h-4 fill-yellow-500" />
-                                <span className="text-sm font-medium">{restaurant.rating.average.toFixed(1)}</span>
-                              </div>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {restaurant.rating?.average !== undefined && (
+                                <div className="flex items-center gap-1 text-yellow-500">
+                                  <Star className="w-4 h-4 fill-yellow-500" />
+                                  <span className="text-sm font-medium">{restaurant.rating.average.toFixed(1)}</span>
+                                </div>
+                              )}
+                              <AddToListButton restaurantId={restaurant.id} restaurant={restaurant} size="sm" />
+                            </div>
                           </div>
                           
                           <div className="flex items-center text-gray-600 text-sm mb-3">

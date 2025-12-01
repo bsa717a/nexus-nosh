@@ -11,6 +11,7 @@ import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileServic
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
 import { searchMapboxRestaurants, geocodeZipCode } from '@/lib/services/mapbox/mapboxSearchService';
 import MapView, { MapViewHandle } from '@/components/MapView';
+import AddToListButton from '@/components/AddToListButton';
 
 interface DashboardProps {
   userId: string;
@@ -176,41 +177,50 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     
     // First add database restaurants (may have user enrichments)
     allRestaurants.forEach(restaurant => {
-      const key = `${restaurant.name.toLowerCase()}-${restaurant.coordinates.lat.toFixed(4)}-${restaurant.coordinates.lng.toFixed(4)}`;
-      restaurantMap.set(key, { ...restaurant, source: 'database' as const });
+      // Validate required fields before processing
+      if (restaurant?.name && restaurant?.coordinates?.lat && restaurant?.coordinates?.lng) {
+        const key = `${restaurant.name.toLowerCase()}-${restaurant.coordinates.lat.toFixed(4)}-${restaurant.coordinates.lng.toFixed(4)}`;
+        restaurantMap.set(key, { ...restaurant, source: 'database' as const });
+      }
     });
     
     // Add restaurants from recommendations (ensure they're always available)
     recommendations.forEach(rec => {
-      const restaurant = rec.restaurant;
-      const key = `${restaurant.name.toLowerCase()}-${restaurant.coordinates.lat.toFixed(4)}-${restaurant.coordinates.lng.toFixed(4)}`;
-      // Only add if not already present (don't override existing data)
-      if (!restaurantMap.has(key)) {
-        restaurantMap.set(key, restaurant);
+      const restaurant = rec?.restaurant;
+      // Validate required fields before processing
+      if (restaurant?.name && restaurant?.coordinates?.lat && restaurant?.coordinates?.lng) {
+        const key = `${restaurant.name.toLowerCase()}-${restaurant.coordinates.lat.toFixed(4)}-${restaurant.coordinates.lng.toFixed(4)}`;
+        // Only add if not already present (don't override existing data)
+        if (!restaurantMap.has(key)) {
+          restaurantMap.set(key, restaurant);
+        }
       }
     });
     
     // Then add/override with Mapbox restaurants (prefer fresh data for name/address)
     if (showMapboxData) {
-    mapboxRestaurants.forEach(mapboxRest => {
-      const key = `${mapboxRest.name.toLowerCase()}-${mapboxRest.coordinates.lat.toFixed(4)}-${mapboxRest.coordinates.lng.toFixed(4)}`;
-      const existing = restaurantMap.get(key);
-      
-      if (existing) {
-        // Merge: Keep Mapbox name/address/coords, but preserve DB enrichments
-        restaurantMap.set(key, {
-          ...existing, // Keep enrichments from DB
-          id: mapboxRest.id, // Use Mapbox ID going forward
-          name: mapboxRest.name, // Prefer fresh Mapbox name
-          address: mapboxRest.address, // Prefer fresh Mapbox address
-          coordinates: mapboxRest.coordinates, // Prefer fresh Mapbox coordinates
-          source: 'mapbox' as const,
-        });
-      } else {
-        // New restaurant from Mapbox
-        restaurantMap.set(key, mapboxRest);
-      }
-    });
+      mapboxRestaurants.forEach(mapboxRest => {
+        // Validate required fields before processing
+        if (mapboxRest?.name && mapboxRest?.coordinates?.lat && mapboxRest?.coordinates?.lng) {
+          const key = `${mapboxRest.name.toLowerCase()}-${mapboxRest.coordinates.lat.toFixed(4)}-${mapboxRest.coordinates.lng.toFixed(4)}`;
+          const existing = restaurantMap.get(key);
+          
+          if (existing) {
+            // Merge: Keep Mapbox name/address/coords, but preserve DB enrichments
+            restaurantMap.set(key, {
+              ...existing, // Keep enrichments from DB
+              id: mapboxRest.id, // Use Mapbox ID going forward
+              name: mapboxRest.name, // Prefer fresh Mapbox name
+              address: mapboxRest.address, // Prefer fresh Mapbox address
+              coordinates: mapboxRest.coordinates, // Prefer fresh Mapbox coordinates
+              source: 'mapbox' as const,
+            });
+          } else {
+            // New restaurant from Mapbox
+            restaurantMap.set(key, mapboxRest);
+          }
+        }
+      });
     }
     
     const restaurants = Array.from(restaurantMap.values());
@@ -228,7 +238,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
 
     // Apply ZIP code filter if active
     if (zipFilter.trim()) {
-      filtered = filtered.filter(r => r.address.includes(zipFilter.trim()));
+      filtered = filtered.filter(r => r?.address?.includes(zipFilter.trim()));
     }
 
     // Ensure focused restaurant is included
@@ -272,10 +282,11 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   });
   
   const topPicks = uniqueRecs
+    .filter(rec => rec?.restaurant?.name) // Filter out any invalid recommendations
     .map(rec => ({
       ...rec,
       // Add small random boost based on daily seed for variety (±5%)
-      adjustedScore: (rec.matchScore || rec.score || 0) + ((getDailySeed() % rec.restaurant.name.length) - 2.5)
+      adjustedScore: (rec.matchScore || rec.score || 0) + ((getDailySeed() % (rec.restaurant.name?.length || 1)) - 2.5)
     }))
     .sort((a, b) => b.adjustedScore - a.adjustedScore)
     .slice(0, 3);
@@ -510,21 +521,26 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               </div>
 
             {/* Restaurant Name */}
-            <h2 
-              onClick={() => topPick && handleRestaurantClick(topPick.restaurant.id)}
-              className="text-2xl font-bold text-gray-900 mb-1 cursor-pointer hover:text-orange-500 transition-colors"
-            >
-              {topPick.restaurant.name}
-            </h2>
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <h2 
+                onClick={() => topPick?.restaurant?.id && handleRestaurantClick(topPick.restaurant.id)}
+                className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-orange-500 transition-colors flex-1"
+              >
+                {topPick?.restaurant?.name || 'Restaurant'}
+              </h2>
+              {topPick?.restaurant?.id && (
+                <AddToListButton restaurantId={topPick.restaurant.id} restaurant={topPick.restaurant} size="sm" />
+              )}
+            </div>
 
             {/* Details */}
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
               <span>
-                {topPick.restaurant.cuisineType && Array.isArray(topPick.restaurant.cuisineType) 
+                {topPick?.restaurant?.cuisineType && Array.isArray(topPick.restaurant.cuisineType) 
                   ? topPick.restaurant.cuisineType.slice(0, 2).join(' • ') 
                   : 'Restaurant'}
               </span>
-              {topPick.restaurant.priceRange && (
+              {topPick?.restaurant?.priceRange?.max && (
                 <>
                   <span>•</span>
                   <span>{'$'.repeat(Math.ceil(topPick.restaurant.priceRange.max / 30))}</span>
@@ -534,7 +550,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
 
             {/* Reason */}
             <p className="text-gray-600 mb-5 leading-relaxed">
-              {topPick.reasons[0] || 'Perfect match for your taste preferences'}
+              {topPick?.reasons?.[0] || 'Perfect match for your taste preferences'}
             </p>
             </div>
 
@@ -581,30 +597,36 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
           
           {!loading && topPicks.length > 1 ? (
             <div className="space-y-3 overflow-y-auto max-h-[320px] pr-2 custom-scrollbar">
-              {topPicks.slice(1).map((rec, index) => (
-                <div 
-                  key={`${rec.restaurant.id}-${index}`}
-                  onClick={() => handleRestaurantClick(rec.restaurant.id)}
-                  className="bg-white rounded-2xl p-4 shadow-sm shadow-gray-100/50 border border-gray-100 cursor-pointer hover:shadow-md transition-all flex items-center justify-between group"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-gray-800 text-sm truncate mb-0.5 group-hover:text-orange-600 transition-colors">
-                      {rec.restaurant.name}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                      <span className="truncate max-w-[120px]">
-                        {rec.restaurant.cuisineType?.[0] || 'Restaurant'}
-                      </span>
-                      {rec.matchScore && (
-                        <span className="font-medium text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full">
-                          {Math.round(rec.matchScore)}% match
+              {topPicks.slice(1).map((rec, index) => {
+                if (!rec?.restaurant?.id || !rec?.restaurant?.name) return null;
+                return (
+                  <div 
+                    key={`${rec.restaurant.id}-${index}`}
+                    onClick={() => handleRestaurantClick(rec.restaurant.id)}
+                    className="bg-white rounded-2xl p-4 shadow-sm shadow-gray-100/50 border border-gray-100 cursor-pointer hover:shadow-md transition-all flex items-center justify-between group"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-800 text-sm truncate mb-0.5 group-hover:text-orange-600 transition-colors">
+                        {rec.restaurant.name}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span className="truncate max-w-[120px]">
+                          {rec.restaurant.cuisineType?.[0] || 'Restaurant'}
                         </span>
-                      )}
+                        {rec.matchScore && (
+                          <span className="font-medium text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-full">
+                            {Math.round(rec.matchScore)}% match
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <AddToListButton restaurantId={rec.restaurant.id} restaurant={rec.restaurant} size="sm" />
+                      <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-400 transition-colors flex-shrink-0" />
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-400 transition-colors flex-shrink-0 ml-3" />
-                </div>
-              ))}
+                );
+              })}
                   </div>
           ) : (
             <div className="bg-white/50 rounded-2xl p-8 text-center border border-dashed border-gray-200 flex items-center justify-center h-full">
@@ -681,21 +703,27 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
           <div className="max-h-[200px] overflow-y-auto">
                 {visibleRestaurants.length > 0 ? (
               <div className="divide-y divide-gray-50">
-                {visibleRestaurants.slice(0, 5).map((restaurant) => (
+                {visibleRestaurants.slice(0, 5).map((restaurant) => {
+                  if (!restaurant?.id || !restaurant?.name) return null;
+                  return (
                     <div
                       key={restaurant.id}
                       onClick={() => handleRestaurantClick(restaurant.id)}
-                    className="flex items-center justify-between p-4 hover:bg-orange-50/50 cursor-pointer transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 truncate">{restaurant.name}</p>
-                      <p className="text-sm text-gray-500 truncate">
-                        {restaurant.cuisineType?.[0] || 'Restaurant'}
-                        {restaurant.attributes?.atmosphere && ` • ${restaurant.attributes.atmosphere}`}
-                      </p>
+                      className="flex items-center justify-between p-4 hover:bg-orange-50/50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{restaurant.name}</p>
+                        <p className="text-sm text-gray-500 truncate">
+                          {restaurant.cuisineType?.[0] || 'Restaurant'}
+                          {restaurant.attributes?.atmosphere && ` • ${restaurant.attributes.atmosphere}`}
+                        </p>
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <AddToListButton restaurantId={restaurant.id} restaurant={restaurant} size="sm" />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-8 text-gray-400">

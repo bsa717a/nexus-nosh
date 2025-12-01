@@ -1,10 +1,11 @@
 import { useRouter } from 'next/router';
-import { Home, UtensilsCrossed, User, Settings, LogOut } from 'lucide-react';
+import { Home, UtensilsCrossed, User, Settings, LogOut, Heart } from 'lucide-react';
 import { useAuth } from '@/lib/auth/useAuth';
 
 const navItems = [
   { href: '/', icon: Home, label: 'Home' },
   { href: '/restaurants', icon: UtensilsCrossed, label: 'Restaurants' },
+  { href: '/my-list', icon: Heart, label: 'My List' },
   { href: '/profile', icon: User, label: 'Profile' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ];

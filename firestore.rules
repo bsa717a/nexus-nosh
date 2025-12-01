@@ -23,6 +23,20 @@ service cloud.firestore {
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
     
+    // User lists (saved restaurants)
+    match /userLists/{docId} {
+      // Allow read if user owns the document
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Allow create if user is authenticated and setting their own userId
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Allow update if user owns the document and is updating their own userId
+      allow update: if request.auth != null && 
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == request.auth.uid;
+      // Allow delete if user owns the document
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+    
     // Restaurants are public read, authenticated users can write (for seeding)
     // TODO: Restrict writes to admin users only in production
     match /restaurants/{restaurantId} {
