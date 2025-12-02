@@ -8,7 +8,8 @@ import {
   updateProfile,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { getFirebaseAuth, initializeFirebase } from '@/lib/firebase/config';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirebaseAuth, getFirebaseDb, initializeFirebase } from '@/lib/firebase/config';
 
 interface AuthContextType {
   user: User | null;
@@ -25,25 +26,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Sync user data to Firestore for friend search
+  const syncUserToFirestore = async (user: User) => {
+    try {
+      const db = getFirebaseDb();
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        email: user.email,
+        emailLowerCase: user.email?.toLowerCase(),
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        lastSeen: serverTimestamp(),
+      }, { merge: true });
+    } catch (error) {
+      // Silently fail - user sync is not critical
+    }
+  };
+
   useEffect(() => {
     // Ensure Firebase is initialized
     try {
       initializeFirebase();
       const authInstance = getFirebaseAuth();
       
-      console.log('[useAuth] Setting up auth state listener');
-      
       let timeoutId: NodeJS.Timeout;
       const unsubscribe = onAuthStateChanged(
         authInstance,
         (user) => {
           clearTimeout(timeoutId);
-          console.log('[useAuth] Auth state changed:', user ? `User: ${user.email}` : 'No user');
           setUser(user);
+          if (user) {
+            syncUserToFirestore(user);
+          }
           setLoading(false);
         },
         (error) => {
-          console.error('[useAuth] Auth state change error:', error);
           clearTimeout(timeoutId);
           setLoading(false);
         }
@@ -51,7 +68,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Safety timeout - if auth doesn't resolve in 5 seconds, stop loading
       timeoutId = setTimeout(() => {
-        console.warn('[useAuth] Auth state check timeout - proceeding without auth');
         setLoading(false);
       }, 5000);
 
@@ -60,7 +76,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         unsubscribe();
       };
     } catch (error) {
-      console.error('[useAuth] Failed to initialize Firebase Auth:', error);
       setLoading(false);
       return () => {};
     }
@@ -74,9 +89,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signUp(email: string, password: string, displayName: string): Promise<User> {
     const authInstance = getFirebaseAuth();
     const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
-    // Update display name
     if (displayName && userCredential.user) {
       await updateProfile(userCredential.user, { displayName });
+      await syncUserToFirestore({ ...userCredential.user, displayName } as User);
     }
     return userCredential.user;
   }

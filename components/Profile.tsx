@@ -7,6 +7,7 @@ import BottomNav from '@/components/BottomNav';
 import { motion } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
+import { getFriends } from '@/lib/services/friends/friendService';
 import { TasteProfile, User as UserType } from '@/lib/types';
 import { useAuth } from '@/lib/auth/useAuth';
 
@@ -18,6 +19,7 @@ export default function Profile({ userId }: ProfileProps) {
   const { user } = useAuth();
   const router = useRouter();
   const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
+  const [friendCount, setFriendCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [userInfo, setUserInfo] = useState({
@@ -49,14 +51,19 @@ export default function Profile({ userId }: ProfileProps) {
   async function loadProfile() {
     setLoading(true);
     try {
-      const profile = await getTasteProfile(userId);
+      const [profile, friends] = await Promise.all([
+        getTasteProfile(userId),
+        getFriends(userId)
+      ]);
       setTasteProfile(profile);
+      setFriendCount(friends.length);
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
       setLoading(false);
     }
   }
+
 
   const handleSave = () => {
     setUserInfo(editForm);
@@ -225,7 +232,7 @@ export default function Profile({ userId }: ProfileProps) {
                   <Users className="w-6 h-6 text-green-500" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">12</p>
+                  <p className="text-2xl font-bold">{friendCount}</p>
                   <p className="text-sm text-gray-500">Friends</p>
                 </div>
               </div>
@@ -357,11 +364,17 @@ export default function Profile({ userId }: ProfileProps) {
           <CardContent>
             <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
             <div className="grid md:grid-cols-2 gap-4">
-              <Button className="justify-start bg-orange-500 hover:bg-orange-600 text-white">
+              <Button 
+                onClick={() => router.push('/my-list')}
+                className="justify-start bg-orange-500 hover:bg-orange-600 text-white"
+              >
                 <MapPin className="w-4 h-4 mr-2" />
                 View My Favorites
               </Button>
-              <Button className="justify-start bg-orange-500 hover:bg-orange-600 text-white">
+              <Button 
+                onClick={() => router.push('/friends')}
+                className="justify-start bg-orange-500 hover:bg-orange-600 text-white"
+              >
                 <Users className="w-4 h-4 mr-2" />
                 Manage Friends
               </Button>

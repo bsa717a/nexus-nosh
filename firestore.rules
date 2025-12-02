@@ -1,47 +1,44 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can only read/write their own data
+    // USERS - Allow any authenticated user to read ALL users (for friend search)
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+      
+      // Friends subcollection
+      match /friends/{friendId} {
+        allow read, write: if request.auth != null;
+      }
     }
     
-    // Taste profiles - authenticated users only
+    // Taste profiles
     match /tasteProfiles/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // User settings (notifications, etc.) - authenticated users only
+    // User settings
     match /userSettings/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // User-specific restaurant state (notes, personal rating, lists)
+    // User restaurants
     match /userRestaurants/{docId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
     
-    // User lists (saved restaurants)
+    // User lists
     match /userLists/{docId} {
-      // Allow read if user owns the document
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      // Allow create if user is authenticated and setting their own userId
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      // Allow update if user owns the document and is updating their own userId
-      allow update: if request.auth != null && 
-        resource.data.userId == request.auth.uid &&
-        request.resource.data.userId == request.auth.uid;
-      // Allow delete if user owns the document
-      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
     
-    // Restaurants are public read, authenticated users can write (for seeding)
-    // TODO: Restrict writes to admin users only in production
+    // Restaurants
     match /restaurants/{restaurantId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read, write: if request.auth != null;
     }
     
     // Ratings
@@ -53,14 +50,12 @@ service cloud.firestore {
     
     // Friend connections
     match /friendConnections/{connectionId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read, write: if request.auth != null;
     }
     
     // Friend recommendations
     match /friendRecommendations/{recId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.fromUserId == request.auth.uid;
+      allow read, write: if request.auth != null;
     }
   }
 }
