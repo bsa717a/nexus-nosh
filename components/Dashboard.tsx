@@ -2,14 +2,14 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MapPin, Star, Sparkles, Navigation, ChevronRight } from 'lucide-react';
+import { MapPin, Star, Sparkles, Navigation, ChevronRight, Search } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { motion } from 'framer-motion';
 import { Restaurant, RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
-import { searchMapboxRestaurants, geocodeZipCode } from '@/lib/services/mapbox/mapboxSearchService';
+import { searchMapboxRestaurants, geocodeZipCode, searchRestaurantsByName } from '@/lib/services/mapbox/mapboxSearchService';
 import MapView, { MapViewHandle } from '@/components/MapView';
 import AddToListButton from '@/components/AddToListButton';
 
@@ -37,6 +37,9 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const [loadingMapbox, setLoadingMapbox] = useState(false);
   const [geocodingZip, setGeocodingZip] = useState(false);
   const [focusedRestaurantId, setFocusedRestaurantId] = useState<string | null>(null);
+  const [restaurantSearchQuery, setRestaurantSearchQuery] = useState<string>('');
+  const [searchingRestaurants, setSearchingRestaurants] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const zipGeocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -411,6 +414,60 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     }, 600); // 600ms debounce for ZIP code input
   }, []);
 
+  // Handle restaurant search by name
+  const handleRestaurantSearch = useCallback(async () => {
+    console.log('[Dashboard] handleRestaurantSearch called', { restaurantSearchQuery });
+    
+    if (!restaurantSearchQuery.trim()) {
+      console.log('[Dashboard] Search query is empty, returning');
+      setSearchError(null);
+      return;
+    }
+
+    console.log('[Dashboard] Starting search...');
+    setSearchingRestaurants(true);
+    setSearchError(null);
+    
+    try {
+      console.log('[Dashboard] Starting restaurant search:', {
+        query: restaurantSearchQuery,
+        location: mapCenter || userLocation
+      });
+      
+      const searchResults = await searchRestaurantsByName(
+        restaurantSearchQuery,
+        mapCenter || userLocation,
+        10
+      );
+      
+      console.log('[Dashboard] Search results:', searchResults.length, searchResults);
+      
+      if (searchResults.length > 0) {
+        console.log('[Dashboard] Setting search results:', searchResults.length, 'restaurants');
+        // Update mapbox restaurants with search results
+        setMapboxRestaurants(searchResults);
+        // Ensure mapbox data is shown
+        setShowMapboxData(true);
+        // Center map on first result if available
+        if (searchResults[0]?.coordinates) {
+          console.log('[Dashboard] Centering map on:', searchResults[0].coordinates);
+          setMapCenter(searchResults[0].coordinates);
+        }
+        setSearchError(null);
+      } else {
+        // Show message if no matches found
+        console.log('[Dashboard] No search results found');
+        setSearchError(`No restaurants found for "${restaurantSearchQuery}"`);
+        // Don't clear existing restaurants, just show message
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error searching restaurants:', error);
+      setSearchError('Error searching restaurants. Please try again.');
+    } finally {
+      setSearchingRestaurants(false);
+    }
+  }, [restaurantSearchQuery, mapCenter, userLocation]);
+
   // Cleanup ZIP geocode timeout on unmount
   useEffect(() => {
     return () => {
@@ -646,9 +703,53 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       >
         <div className="bg-white rounded-3xl shadow-lg shadow-gray-100/50 overflow-hidden">
           {/* Map Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-800">Explore Nearby</h3>
+          <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold text-gray-800">Explore Nearby</h3>
               <div className="flex gap-2">
+                <div className="relative flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('[Dashboard] Search button clicked', {
+                        query: restaurantSearchQuery,
+                        disabled: searchingRestaurants || !restaurantSearchQuery.trim()
+                      });
+                      if (!restaurantSearchQuery.trim()) {
+                        alert('Please enter a search query');
+                        return;
+                      }
+                      handleRestaurantSearch();
+                    }}
+                    disabled={searchingRestaurants || !restaurantSearchQuery.trim()}
+                    className="rounded-lg border-gray-200 flex-shrink-0"
+                    title="Search restaurants"
+                  >
+                    {searchingRestaurants ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-orange-500 border-t-transparent"></div>
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                  </Button>
+                  <input
+                    type="text"
+                    placeholder="Search restaurants..."
+                    value={restaurantSearchQuery}
+                    onChange={(e) => {
+                      setRestaurantSearchQuery(e.target.value);
+                      setSearchError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && restaurantSearchQuery.trim()) {
+                        handleRestaurantSearch();
+                      }
+                    }}
+                    className="w-32 px-3 py-1.5 text-sm bg-gray-50 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
                 <div className="relative">
                   <input
                     type="text"
@@ -680,6 +781,12 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                 </Button>
               </div>
             </div>
+            {searchError && (
+              <div className="text-xs text-orange-600 mt-1">
+                {searchError}
+              </div>
+            )}
+          </div>
 
           {/* Map */}
           <div className="relative h-[400px]">

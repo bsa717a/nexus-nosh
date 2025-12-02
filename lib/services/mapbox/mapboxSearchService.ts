@@ -31,6 +31,9 @@ interface MapboxFeature {
     maki?: string; // Icon identifier
     poi_category?: string[];
     poi_category_ids?: string[];
+    review_score?: number; // Mapbox rating/review score if available
+    review_count?: number; // Number of reviews if available
+    [key: string]: any; // Allow other properties
   };
 }
 
@@ -122,6 +125,12 @@ export async function searchMapboxRestaurants(
             cuisineType,
             source: 'mapbox' as const,
             
+            // Extract rating if available from Mapbox
+            rating: feature.properties.review_score !== undefined ? {
+              average: feature.properties.review_score,
+              count: feature.properties.review_count || 0,
+            } : undefined,
+            
             // Optional: Add walkable distance attribute if very close
             attributes: distance < 1 ? {
               walkableDistance: true,
@@ -212,6 +221,154 @@ export async function geocodeZipCode(zipCode: string): Promise<{ lat: number; ln
 }
 
 /**
+ * Search for restaurants by name/query using Mapbox Search Box API
+ * @param query Search query (restaurant name or keywords)
+ * @param location Optional center point for proximity-based search
+ * @param limit Maximum number of results (max 25 for Mapbox)
+ */
+export async function searchRestaurantsByName(
+  query: string,
+  location?: { lat: number; lng: number },
+  limit: number = 10
+): Promise<Restaurant[]> {
+  try {
+    console.log('[MapboxSearch] Searching restaurants by name:', query);
+    
+    if (!MAPBOX_TOKEN) {
+      console.error('[MapboxSearch] No API token found!');
+      return [];
+    }
+    
+    if (!query || query.trim().length === 0) {
+      return [];
+    }
+    
+    // Mapbox Search Box API - Forward geocoding with restaurant search
+    // Documentation: https://docs.mapbox.com/api/search/search-box/
+    // Note: Forward endpoint limit is max 10 (different from category endpoint)
+    const searchQuery = encodeURIComponent(query.trim());
+    // Use forward geocoding endpoint - search for restaurants by name
+    // Format: searchbox/v1/forward?q={query}&proximity={lng},{lat}&types=poi
+    let url = `https://api.mapbox.com/search/searchbox/v1/forward?access_token=${MAPBOX_TOKEN}&q=${searchQuery}&limit=${Math.min(limit, 10)}&language=en&types=poi`;
+    
+    // Add proximity if location is provided
+    if (location) {
+      const proximity = `${location.lng},${location.lat}`;
+      url += `&proximity=${proximity}`;
+    }
+    
+    console.log('[MapboxSearch] Fetching from Mapbox Search Box API...', url);
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[MapboxSearch] API error:', response.status, response.statusText, errorText);
+      return [];
+    }
+    
+    const data: MapboxSearchResponse = await response.json();
+    console.log('[MapboxSearch] Received features:', data.features?.length || 0);
+    console.log('[MapboxSearch] Sample feature:', data.features?.[0]);
+    
+    // Convert Mapbox features to Restaurant objects
+    // Filter for restaurants only (check poi_category for restaurant-related categories)
+    const allFeatures = data.features || [];
+    console.log('[MapboxSearch] Total features before filtering:', allFeatures.length);
+    
+    const restaurants: Restaurant[] = allFeatures
+      .filter((feature) => {
+        // Filter for restaurants - check if it's a restaurant POI
+        const categories = feature.properties.poi_category || [];
+        const categoryIds = feature.properties.poi_category_ids || [];
+        
+        // Check if it's a restaurant category (restaurant, food, cafe, etc.)
+        // Be more lenient - accept anything with food/restaurant/cafe/dining/bakery/etc.
+        const isRestaurant = categories.some((cat: string) => {
+          const lowerCat = cat.toLowerCase();
+          return lowerCat.includes('restaurant') || 
+                 lowerCat.includes('food') ||
+                 lowerCat.includes('cafe') ||
+                 lowerCat.includes('dining') ||
+                 lowerCat.includes('bakery') ||
+                 lowerCat.includes('bar') ||
+                 lowerCat.includes('pizza') ||
+                 lowerCat.includes('fast food');
+        }) || categoryIds.some((id: string) => {
+          const lowerId = id.toLowerCase();
+          return lowerId.includes('restaurant') || 
+                 lowerId.includes('food') ||
+                 lowerId.includes('cafe') ||
+                 lowerId.includes('dining') ||
+                 lowerId.includes('bakery') ||
+                 lowerId.includes('bar') ||
+                 lowerId.includes('pizza') ||
+                 lowerId.includes('fast_food');
+        });
+        
+        return isRestaurant;
+      })
+      .map((feature) => {
+        try {
+          const [lng, lat] = feature.geometry.coordinates;
+          
+          // Extract address from properties
+          const address = feature.properties.full_address || 
+                         feature.properties.place_formatted || 
+                         feature.properties.address ||
+                         `${feature.properties.context?.place?.name || ''}, ${feature.properties.context?.region?.region_code || ''}`.trim();
+          
+          // Determine cuisine type from POI categories
+          const categories = feature.properties.poi_category || [];
+          const cuisineType = categories.length > 0 
+            ? categories.slice(0, 3) 
+            : ['Restaurant'];
+          
+          const restaurant: Restaurant = {
+            id: `mapbox-${feature.properties.mapbox_id}`,
+            name: feature.properties.name_preferred || feature.properties.name,
+            address: address,
+            coordinates: {
+              lat,
+              lng,
+            },
+            cuisineType,
+            source: 'mapbox' as const,
+            
+            // Extract rating if available from Mapbox
+            rating: feature.properties.review_score !== undefined ? {
+              average: feature.properties.review_score,
+              count: feature.properties.review_count || 0,
+            } : undefined,
+          };
+          
+          return restaurant;
+        } catch (error) {
+          console.error('[MapboxSearch] Error parsing feature:', error, feature);
+          return null;
+        }
+      })
+      .filter((r): r is Restaurant => r !== null);
+    
+    console.log('[MapboxSearch] Converted to restaurants:', restaurants.length);
+    console.log('[MapboxSearch] Restaurant names:', restaurants.map(r => r.name));
+    
+    if (restaurants.length === 0 && allFeatures.length > 0) {
+      console.warn('[MapboxSearch] No restaurants found after filtering, but', allFeatures.length, 'features were returned');
+      console.warn('[MapboxSearch] Sample feature categories:', allFeatures[0]?.properties?.poi_category);
+    }
+    
+    return restaurants;
+  } catch (error) {
+    console.error('[MapboxSearch] Error searching restaurants:', error);
+    return [];
+  }
+}
+
+/**
  * Get detailed information about a specific place by Mapbox ID
  */
 export async function getMapboxPlaceDetails(mapboxId: string): Promise<Partial<Restaurant> | null> {
@@ -269,6 +426,11 @@ export async function getMapboxPlaceDetails(mapboxId: string): Promise<Partial<R
       },
       cuisineType,
       source: 'mapbox' as const,
+      // Extract rating if available from Mapbox
+      rating: feature.properties.review_score !== undefined ? {
+        average: feature.properties.review_score,
+        count: feature.properties.review_count || 0,
+      } : undefined,
     };
     
     console.log('[MapboxSearch] Returning restaurant details:', result);

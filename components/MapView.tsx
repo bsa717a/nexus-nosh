@@ -2,6 +2,7 @@ import { useMemo, useState, useRef, useImperativeHandle, forwardRef, useEffect, 
 import Map, { Marker, NavigationControl, Popup, MapRef } from 'react-map-gl';
 import { RestaurantRecommendation, Restaurant } from '@/lib/types';
 import { MapPin, Star } from 'lucide-react';
+import AddToListButton from '@/components/AddToListButton';
 
 interface MapViewProps {
   recommendations?: RestaurantRecommendation[];
@@ -279,14 +280,17 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                 <h3 className="font-semibold text-gray-800 flex-1">
                   {selectedRestaurant.name}
                 </h3>
+                <div className="ml-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <AddToListButton restaurantId={selectedRestaurant.id} restaurant={selectedRestaurant} size="sm" />
+                </div>
               </div>
-              {selectedRestaurant.rating?.average !== undefined && (
+              {selectedRestaurant.rating?.average !== undefined && selectedRestaurant.rating.average > 0 && (
                 <div className="flex items-center gap-1 text-yellow-500 mb-2">
                   <Star className="w-4 h-4 fill-yellow-500" />
                   <span className="text-sm font-medium">
-                    {selectedRestaurant.rating?.average.toFixed(1)}
+                    {selectedRestaurant.rating.average.toFixed(1)}
                   </span>
-                  {selectedRestaurant.rating?.count !== undefined && (
+                  {selectedRestaurant.rating.count !== undefined && selectedRestaurant.rating.count > 0 && (
                     <span className="text-xs text-gray-500">
                       ({selectedRestaurant.rating.count})
                     </span>
