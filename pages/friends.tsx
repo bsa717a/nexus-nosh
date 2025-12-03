@@ -6,10 +6,11 @@ import BottomNav from '@/components/BottomNav';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { Friend } from '@/lib/types';
 import { getFriends, inviteFriendByEmail, removeFriend, getInviteMessage } from '@/lib/services/friends/friendService';
-import { UserPlus, Mail, Share2, Trash2, User as UserIcon, Search } from 'lucide-react';
+import { UserPlus, Mail, Share2, Trash2, User as UserIcon, ChevronRight } from 'lucide-react';
 
 export default function FriendsPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -32,6 +33,13 @@ export default function FriendsPage() {
       console.error('Failed to load friends', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFriendClick = (friend: Friend) => {
+    // Only navigate if the friend has a userId (is a real user, not just an email invite)
+    if (friend.userId) {
+      router.push(`/friend/${friend.userId}`);
     }
   };
 
@@ -183,32 +191,47 @@ export default function FriendsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {friends.map((friend) => (
-                  <div key={friend.id} className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-gray-200 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center">
-                        {friend.photoURL ? (
-                          <img src={friend.photoURL} alt={friend.displayName} className="w-10 h-10 rounded-full" />
-                        ) : (
-                          <span className="text-indigo-600 font-medium text-sm">
-                            {(friend.displayName || friend.email || '?')[0].toUpperCase()}
-                          </span>
+                {friends.map((friend) => {
+                  const isClickable = !!friend.userId && friend.status === 'accepted';
+                  return (
+                    <div 
+                      key={friend.id} 
+                      className={`flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm transition-colors ${
+                        isClickable ? 'hover:border-indigo-200 hover:bg-indigo-50/30 cursor-pointer' : ''
+                      }`}
+                      onClick={() => isClickable && handleFriendClick(friend)}
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center flex-shrink-0">
+                          {friend.photoURL ? (
+                            <img src={friend.photoURL} alt={friend.displayName} className="w-10 h-10 rounded-full" />
+                          ) : (
+                            <span className="text-indigo-600 font-medium text-sm">
+                              {(friend.displayName || friend.email || '?')[0].toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 truncate">{friend.displayName || friend.email}</p>
+                          <p className="text-xs text-gray-500 capitalize">{friend.status}</p>
+                        </div>
+                        {isClickable && (
+                          <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                         )}
                       </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{friend.displayName || friend.email}</p>
-                        <p className="text-xs text-gray-500 capitalize">{friend.status}</p>
-                      </div>
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFriend(friend.id);
+                        }}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                    
-                    <button
-                      onClick={() => handleRemoveFriend(friend.id)}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

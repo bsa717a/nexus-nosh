@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MapPin, Star, Sparkles, Navigation, ChevronRight, Search } from 'lucide-react';
+import { MapPin, Star, Sparkles, Navigation, ChevronRight, Search, Users } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { motion } from 'framer-motion';
 import { Restaurant, RestaurantRecommendation } from '@/lib/types';
@@ -10,6 +10,7 @@ import { getPersonalizedRecommendations } from '@/lib/services/recommendations/r
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
 import { searchMapboxRestaurants, geocodeZipCode, searchRestaurantsByName } from '@/lib/services/mapbox/mapboxSearchService';
+import { getFriendsHighlyRatedRestaurants, FriendRecommendedRestaurant } from '@/lib/services/friends/friendService';
 import MapView, { MapViewHandle } from '@/components/MapView';
 import AddToListButton from '@/components/AddToListButton';
 
@@ -40,6 +41,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const [restaurantSearchQuery, setRestaurantSearchQuery] = useState<string>('');
   const [searchingRestaurants, setSearchingRestaurants] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [friendsRecommendations, setFriendsRecommendations] = useState<FriendRecommendedRestaurant[]>([]);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const zipGeocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -48,15 +50,17 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [recs, profile, restaurants] = await Promise.all([
+      const [recs, profile, restaurants, friendsRecs] = await Promise.all([
         getPersonalizedRecommendations(userId, userLocation),
         getTasteProfile(userId),
         getAllRestaurants(100),
+        getFriendsHighlyRatedRestaurants(userId, 2),
       ]);
       setRecommendations(recs);
       setSeededRecommendations(recs);
       setTasteProfile(profile);
       setAllRestaurants(restaurants);
+      setFriendsRecommendations(friendsRecs);
 
       // Load Mapbox restaurants if user location is available
       if (userLocation) {
@@ -610,17 +614,6 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               {topPick?.reasons?.[0] || 'Perfect match for your taste preferences'}
             </p>
             </div>
-
-              {/* Action Buttons */}
-              <div className="mt-auto pt-4">
-                <Button 
-                  onClick={handleSurpriseMe}
-                className="w-full bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white rounded-xl py-3 font-medium shadow-lg shadow-orange-200/50"
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                Surprise Me
-              </Button>
-                        </div>
               </div>
             ) : (
           <div className="bg-white rounded-3xl p-6 shadow-lg shadow-orange-100/50 text-center h-full flex flex-col justify-center items-center">
@@ -638,7 +631,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
             )}
       </motion.section>
 
-        {/* Right Column: More Picks Vertical List */}
+        {/* Right Column: Friends' Recommendations */}
       <motion.section 
           initial={{ opacity: 0, x: 20 }} 
           animate={{ opacity: 1, x: 0 }}
@@ -646,13 +639,57 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
           className="flex flex-col h-full"
         >
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">More for you</h3>
-            <button className="text-orange-500 text-sm font-medium flex items-center hover:text-orange-600">
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              More for you
+            </h3>
+            <button 
+              onClick={() => router.push('/friends')}
+              className="text-orange-500 text-sm font-medium flex items-center hover:text-orange-600"
+            >
               See all <ChevronRight className="w-4 h-4" />
             </button>
             </div>
           
-          {!loading && topPicks.length > 1 ? (
+          {!loading && friendsRecommendations.length > 0 ? (
+            <div className="space-y-3 overflow-y-auto max-h-[320px] pr-2 custom-scrollbar">
+              {friendsRecommendations.map((rec, index) => {
+                if (!rec?.restaurant?.id || !rec?.restaurant?.name) return null;
+                return (
+                  <div 
+                    key={`${rec.restaurant.id}-${index}`}
+                    onClick={() => handleRestaurantClick(rec.restaurant.id)}
+                    className="bg-white rounded-2xl p-4 shadow-sm shadow-gray-100/50 border border-gray-100 cursor-pointer hover:shadow-md transition-all group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-gray-800 text-sm truncate mb-0.5 group-hover:text-orange-600 transition-colors">
+                          {rec.restaurant.name}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                          <span className="truncate max-w-[120px]">
+                            {rec.restaurant.cuisineType?.[0] || 'Restaurant'}
+                          </span>
+                          <div className="flex items-center gap-0.5 text-yellow-500">
+                            <Star className="w-3 h-3 fill-yellow-500" />
+                            <span className="font-medium">{rec.rating}</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-indigo-600 font-medium">
+                          {rec.friendName} likes this
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <AddToListButton restaurantId={rec.restaurant.id} restaurant={rec.restaurant} size="sm" />
+                        <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-400 transition-colors flex-shrink-0" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+                  </div>
+          ) : !loading && topPicks.length > 1 ? (
+            // Fallback to regular recommendations if no friend recommendations
             <div className="space-y-3 overflow-y-auto max-h-[320px] pr-2 custom-scrollbar">
               {topPicks.slice(1).map((rec, index) => {
                 if (!rec?.restaurant?.id || !rec?.restaurant?.name) return null;
@@ -686,8 +723,15 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               })}
                   </div>
           ) : (
-            <div className="bg-white/50 rounded-2xl p-8 text-center border border-dashed border-gray-200 flex items-center justify-center h-full">
-              <p className="text-gray-400 text-sm">More recommendations will appear here</p>
+            <div className="bg-white/50 rounded-2xl p-8 text-center border border-dashed border-gray-200 flex flex-col items-center justify-center h-full">
+              <Users className="w-8 h-8 text-gray-300 mb-2" />
+              <p className="text-gray-400 text-sm">Add friends to see their favorite restaurants</p>
+              <button 
+                onClick={() => router.push('/friends')}
+                className="mt-2 text-orange-500 text-sm font-medium hover:text-orange-600"
+              >
+                Add Friends
+              </button>
             </div>
           )}
       </motion.section>
@@ -705,7 +749,17 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
           {/* Map Header */}
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-gray-800">Explore Nearby</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-gray-800">Explore Nearby</h3>
+                <Button 
+                  onClick={handleSurpriseMe}
+                  size="sm"
+                  className="bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white rounded-lg text-xs px-3 py-1 whitespace-nowrap inline-flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3 flex-shrink-0" />
+                  <span>Surprise Me</span>
+                </Button>
+              </div>
               <div className="flex gap-2">
                 <div className="relative flex items-center gap-1">
                   <Button
