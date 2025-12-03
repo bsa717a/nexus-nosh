@@ -42,30 +42,130 @@ export async function getFriends(userId: string): Promise<Friend[]> {
 }
 
 /**
- * Invite a friend by email (creates a pending record)
+ * Invite a friend by email - searches for user first, creates request if found
  */
-export async function inviteFriendByEmail(currentUserId: string, friendEmail: string): Promise<void> {
+export async function inviteFriendByEmail(
+  currentUserId: string, 
+  currentUserEmail: string,
+  currentUserName: string,
+  friendEmail: string
+): Promise<{ found: boolean; friendName?: string }> {
   const db = getFirebaseDb();
   const friendsRef = collection(db, USERS_COLLECTION, currentUserId, 'friends');
   
   // Check if already invited/connected
-  // Note: In a real app, we'd check if the user exists in a top-level users collection too
-  const q = query(friendsRef, where('email', '==', friendEmail));
-  const existing = await getDocs(q);
+  const existingQuery = query(friendsRef, where('email', '==', friendEmail));
+  const existing = await getDocs(existingQuery);
   
   if (!existing.empty) {
-    throw new Error('Friend already invited or added');
+    const existingStatus = existing.docs[0].data().status;
+    if (existingStatus === 'accepted') throw new Error('Already friends!');
+    if (existingStatus === 'requested_outgoing') throw new Error('Request already sent');
+    if (existingStatus === 'requested_incoming') throw new Error('They already sent you a request! Check your list.');
+    throw new Error('Friend already invited');
   }
 
-  // Create pending friend record
+  // Search for user in the system
+  const usersRef = collection(db, USERS_COLLECTION);
+  
+  // Try exact email match
+  console.log('[inviteFriendByEmail] Searching for:', friendEmail);
+  let userQuery = query(usersRef, where('email', '==', friendEmail));
+  let userSnapshot = await getDocs(userQuery);
+  console.log('[inviteFriendByEmail] Exact match results:', userSnapshot.size);
+  
+  // Try lowercase match if not found
+  if (userSnapshot.empty) {
+    userQuery = query(usersRef, where('emailLowerCase', '==', friendEmail.toLowerCase()));
+    userSnapshot = await getDocs(userQuery);
+    console.log('[inviteFriendByEmail] Lowercase field match results:', userSnapshot.size);
+  }
+  
+  // Try email field with lowercase value
+  if (userSnapshot.empty) {
+    userQuery = query(usersRef, where('email', '==', friendEmail.toLowerCase()));
+    userSnapshot = await getDocs(userQuery);
+    console.log('[inviteFriendByEmail] Email lowercase value match results:', userSnapshot.size);
+  }
+  
+  // Debug: List all users
+  if (userSnapshot.empty) {
+    const allUsers = await getDocs(usersRef);
+    console.log('[inviteFriendByEmail] All users in collection:');
+    allUsers.forEach(doc => {
+      const data = doc.data();
+      console.log(`  - ${doc.id}: ${data.email}`);
+    });
+  }
+
+  // USER FOUND - Create friend request on both sides
+  if (!userSnapshot.empty) {
+    const targetUserDoc = userSnapshot.docs[0];
+    const targetUserId = targetUserDoc.id;
+    const targetUserData = targetUserDoc.data();
+
+    if (targetUserId === currentUserId) {
+      throw new Error("You can't add yourself!");
+    }
+
+    // Create OUTGOING request (my side)
+    const myFriendRef = doc(friendsRef, targetUserId);
+    await setDoc(myFriendRef, {
+      id: targetUserId,
+      userId: targetUserId,
+      email: friendEmail,
+      displayName: targetUserData.displayName || friendEmail.split('@')[0],
+      photoURL: targetUserData.photoURL || null,
+      status: 'requested_outgoing',
+      invitedAt: serverTimestamp(),
+    });
+
+    // Create INCOMING request (their side)
+    const theirFriendRef = doc(db, USERS_COLLECTION, targetUserId, 'friends', currentUserId);
+    await setDoc(theirFriendRef, {
+      id: currentUserId,
+      userId: currentUserId,
+      email: currentUserEmail,
+      displayName: currentUserName || currentUserEmail.split('@')[0],
+      status: 'requested_incoming',
+      invitedAt: serverTimestamp(),
+    });
+
+    return { found: true, friendName: targetUserData.displayName };
+  }
+
+  // USER NOT FOUND - Create pending email invite
   const newFriendRef = doc(friendsRef);
   await setDoc(newFriendRef, {
     id: newFriendRef.id,
     email: friendEmail,
-    displayName: friendEmail.split('@')[0], // Fallback name
+    displayName: friendEmail.split('@')[0],
     status: 'pending',
     invitedAt: serverTimestamp(),
   });
+
+  return { found: false };
+}
+
+/**
+ * Accept a friend request - updates both sides to 'accepted'
+ */
+export async function acceptFriendRequest(userId: string, friendId: string): Promise<void> {
+  const db = getFirebaseDb();
+  
+  // Update my side to accepted
+  const myFriendRef = doc(db, USERS_COLLECTION, userId, 'friends', friendId);
+  await setDoc(myFriendRef, {
+    status: 'accepted',
+    connectedAt: serverTimestamp()
+  }, { merge: true });
+
+  // Update their side to accepted
+  const theirFriendRef = doc(db, USERS_COLLECTION, friendId, 'friends', userId);
+  await setDoc(theirFriendRef, {
+    status: 'accepted',
+    connectedAt: serverTimestamp()
+  }, { merge: true });
 }
 
 /**
@@ -285,6 +385,55 @@ export async function getFriendsHighlyRatedRestaurants(userId: string, limit: nu
     
   } catch (error) {
     console.error('Error getting friends highly rated restaurants:', error);
+    return [];
+  }
+}
+
+/**
+ * Get all restaurant IDs from all friends' lists
+ * Used for coloring pins on the map
+ */
+export async function getAllFriendsRestaurantIds(userId: string): Promise<string[]> {
+  try {
+    const db = getFirebaseDb();
+    
+    // Get all accepted friends
+    const friendsRef = collection(db, USERS_COLLECTION, userId, 'friends');
+    const friendsSnapshot = await getDocs(friendsRef);
+    
+    const acceptedFriends = friendsSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter((f: any) => f.status === 'accepted' && f.userId);
+    
+    if (acceptedFriends.length === 0) {
+      return [];
+    }
+    
+    const allRestaurantIds: Set<string> = new Set();
+    
+    // For each friend, get their restaurant list
+    for (const friend of acceptedFriends) {
+      const friendData = friend as any;
+      const friendId = friendData.userId;
+      
+      const listQuery = query(
+        collection(db, USER_LISTS_COLLECTION),
+        where('userId', '==', friendId)
+      );
+      const listSnapshot = await getDocs(listQuery);
+      
+      listSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.restaurantId) {
+          allRestaurantIds.add(data.restaurantId);
+        }
+      });
+    }
+    
+    return Array.from(allRestaurantIds);
+    
+  } catch (error) {
+    console.error('Error getting friends restaurant IDs:', error);
     return [];
   }
 }

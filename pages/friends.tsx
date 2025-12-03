@@ -5,8 +5,8 @@ import { useAuth } from '@/lib/auth/useAuth';
 import BottomNav from '@/components/BottomNav';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { Friend } from '@/lib/types';
-import { getFriends, inviteFriendByEmail, removeFriend, getInviteMessage } from '@/lib/services/friends/friendService';
-import { UserPlus, Mail, Share2, Trash2, User as UserIcon, ChevronRight } from 'lucide-react';
+import { getFriends, inviteFriendByEmail, removeFriend, getInviteMessage, acceptFriendRequest } from '@/lib/services/friends/friendService';
+import { UserPlus, Mail, Share2, Trash2, User as UserIcon, ChevronRight, Check, X, Clock } from 'lucide-react';
 
 export default function FriendsPage() {
   const { user } = useAuth();
@@ -37,8 +37,8 @@ export default function FriendsPage() {
   };
 
   const handleFriendClick = (friend: Friend) => {
-    // Only navigate if the friend has a userId (is a real user, not just an email invite)
-    if (friend.userId) {
+    // Only navigate if the friend has a userId and is accepted
+    if (friend.userId && friend.status === 'accepted') {
       router.push(`/friend/${friend.userId}`);
     }
   };
@@ -51,21 +51,45 @@ export default function FriendsPage() {
     setMessage(null);
 
     try {
-      await inviteFriendByEmail(user.uid, inviteEmail);
-      setMessage({ type: 'success', text: `Invitation sent to ${inviteEmail}!` });
+      const result = await inviteFriendByEmail(
+        user.uid, 
+        user.email || '', 
+        user.displayName || user.email?.split('@')[0] || 'Someone',
+        inviteEmail
+      );
+      
+      if (result.found) {
+        setMessage({ type: 'success', text: `Friend request sent to ${result.friendName || inviteEmail}!` });
+      } else {
+        setMessage({ type: 'success', text: `${inviteEmail} not found. Opening email to invite them...` });
+        // Open mail client for users not in the system
+        const { title, text, url } = getInviteMessage(user.displayName || 'a friend');
+        const mailtoLink = `mailto:${inviteEmail}?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text + ' ' + url)}`;
+        setTimeout(() => {
+          window.location.href = mailtoLink;
+        }, 1500);
+      }
+      
       setInviteEmail('');
       setShowInviteForm(false);
       loadFriends();
-      
-      // Open mail client as a fallback/helper
-      const { title, text, url } = getInviteMessage(user.displayName || 'a friend');
-      const mailtoLink = `mailto:${inviteEmail}?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text + ' ' + url)}`;
-      window.location.href = mailtoLink;
       
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || 'Failed to invite friend' });
     } finally {
       setIsInviting(false);
+    }
+  };
+
+  const handleAcceptRequest = async (friendId: string) => {
+    if (!user) return;
+    try {
+      await acceptFriendRequest(user.uid, friendId);
+      setMessage({ type: 'success', text: 'Friend request accepted!' });
+      loadFriends();
+    } catch (error) {
+      console.error('Failed to accept request', error);
+      setMessage({ type: 'error', text: 'Failed to accept request' });
     }
   };
 
@@ -99,6 +123,11 @@ export default function FriendsPage() {
       console.error('Failed to remove friend', error);
     }
   };
+
+  // Separate friends into categories
+  const incomingRequests = friends.filter(f => f.status === 'requested_incoming');
+  const acceptedFriends = friends.filter(f => f.status === 'accepted');
+  const pendingOutgoing = friends.filter(f => f.status === 'requested_outgoing' || f.status === 'pending');
 
   return (
     <ProtectedRoute>
@@ -150,7 +179,7 @@ export default function FriendsPage() {
                       disabled={isInviting}
                       className="flex-1 py-2.5 bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50"
                     >
-                      {isInviting ? 'Sending...' : 'Send Invite'}
+                      {isInviting ? 'Searching...' : 'Send Request'}
                     </button>
                     <button
                       type="button"
@@ -174,7 +203,7 @@ export default function FriendsPage() {
           </div>
 
           {/* Friends List */}
-          <div className="px-4 py-4">
+          <div className="px-4 py-4 space-y-6">
             {loading ? (
               <div className="space-y-4">
                 {[1, 2, 3].map(i => (
@@ -190,49 +219,139 @@ export default function FriendsPage() {
                 <p className="text-gray-500 mt-1">Invite friends to share your restaurant picks!</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {friends.map((friend) => {
-                  const isClickable = !!friend.userId && friend.status === 'accepted';
-                  return (
-                    <div 
-                      key={friend.id} 
-                      className={`flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm transition-colors ${
-                        isClickable ? 'hover:border-indigo-200 hover:bg-indigo-50/30 cursor-pointer' : ''
-                      }`}
-                      onClick={() => isClickable && handleFriendClick(friend)}
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center flex-shrink-0">
-                          {friend.photoURL ? (
-                            <img src={friend.photoURL} alt={friend.displayName} className="w-10 h-10 rounded-full" />
-                          ) : (
-                            <span className="text-indigo-600 font-medium text-sm">
-                              {(friend.displayName || friend.email || '?')[0].toUpperCase()}
-                            </span>
-                          )}
+              <>
+                {/* Incoming Requests */}
+                {incomingRequests.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                      Friend Requests ({incomingRequests.length})
+                    </h3>
+                    <div className="space-y-3">
+                      {incomingRequests.map((friend) => (
+                        <div 
+                          key={friend.id} 
+                          className="flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-xl"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
+                              {friend.photoURL ? (
+                                <img src={friend.photoURL} alt={friend.displayName} className="w-10 h-10 rounded-full" />
+                              ) : (
+                                <span className="text-indigo-600 font-medium text-sm">
+                                  {(friend.displayName || friend.email || '?')[0].toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-gray-900 truncate">{friend.displayName || friend.email}</p>
+                              <p className="text-xs text-indigo-600">Wants to connect</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleAcceptRequest(friend.id)}
+                              className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                              title="Accept"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveFriend(friend.id)}
+                              className="p-2 bg-gray-200 text-gray-600 rounded-lg hover:bg-red-100 hover:text-red-500 transition-colors"
+                              title="Decline"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-gray-900 truncate">{friend.displayName || friend.email}</p>
-                          <p className="text-xs text-gray-500 capitalize">{friend.status}</p>
-                        </div>
-                        {isClickable && (
-                          <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                        )}
-                      </div>
-                      
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveFriend(friend.id);
-                        }}
-                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-2"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                )}
+
+                {/* Accepted Friends */}
+                {acceptedFriends.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                      Friends ({acceptedFriends.length})
+                    </h3>
+                    <div className="space-y-3">
+                      {acceptedFriends.map((friend) => (
+                        <div 
+                          key={friend.id} 
+                          className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-indigo-200 hover:bg-indigo-50/30 cursor-pointer transition-colors"
+                          onClick={() => handleFriendClick(friend)}
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center flex-shrink-0">
+                              {friend.photoURL ? (
+                                <img src={friend.photoURL} alt={friend.displayName} className="w-10 h-10 rounded-full" />
+                              ) : (
+                                <span className="text-green-600 font-medium text-sm">
+                                  {(friend.displayName || friend.email || '?')[0].toUpperCase()}
+                                </span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-gray-900 truncate">{friend.displayName || friend.email}</p>
+                              <p className="text-xs text-green-600">Connected</p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                          </div>
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFriend(friend.id);
+                            }}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-2"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending / Outgoing */}
+                {pendingOutgoing.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                      Pending ({pendingOutgoing.length})
+                    </h3>
+                    <div className="space-y-3">
+                      {pendingOutgoing.map((friend) => (
+                        <div 
+                          key={friend.id} 
+                          className="flex items-center justify-between p-4 bg-gray-50 border border-gray-100 rounded-xl"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
+                              <Clock className="w-5 h-5 text-gray-400" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-gray-700 truncate">{friend.displayName || friend.email}</p>
+                              <p className="text-xs text-gray-500">
+                                {friend.status === 'requested_outgoing' ? 'Request sent' : 'Invite sent'}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <button
+                            onClick={() => handleRemoveFriend(friend.id)}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Cancel"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </main>
@@ -242,4 +361,3 @@ export default function FriendsPage() {
     </ProtectedRoute>
   );
 }
-

@@ -9,8 +9,9 @@ import { Restaurant, RestaurantRecommendation } from '@/lib/types';
 import { getPersonalizedRecommendations } from '@/lib/services/recommendations/recommendationService';
 import { getTasteProfile } from '@/lib/services/taste-profile/tasteProfileService';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
+import { getUserListIds } from '@/lib/services/restaurants/userListService';
 import { searchMapboxRestaurants, geocodeZipCode, searchRestaurantsByName } from '@/lib/services/mapbox/mapboxSearchService';
-import { getFriendsHighlyRatedRestaurants, FriendRecommendedRestaurant } from '@/lib/services/friends/friendService';
+import { getFriendsHighlyRatedRestaurants, FriendRecommendedRestaurant, getAllFriendsRestaurantIds } from '@/lib/services/friends/friendService';
 import MapView, { MapViewHandle } from '@/components/MapView';
 import AddToListButton from '@/components/AddToListButton';
 
@@ -42,6 +43,8 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const [searchingRestaurants, setSearchingRestaurants] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [friendsRecommendations, setFriendsRecommendations] = useState<FriendRecommendedRestaurant[]>([]);
+  const [myListIds, setMyListIds] = useState<Set<string>>(new Set());
+  const [friendsListIds, setFriendsListIds] = useState<Set<string>>(new Set());
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const zipGeocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -50,17 +53,21 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [recs, profile, restaurants, friendsRecs] = await Promise.all([
+      const [recs, profile, restaurants, friendsRecs, userListIds, friendsRestaurantIds] = await Promise.all([
         getPersonalizedRecommendations(userId, userLocation),
         getTasteProfile(userId),
         getAllRestaurants(100),
         getFriendsHighlyRatedRestaurants(userId, 2),
+        getUserListIds(userId),
+        getAllFriendsRestaurantIds(userId),
       ]);
       setRecommendations(recs);
       setSeededRecommendations(recs);
       setTasteProfile(profile);
       setAllRestaurants(restaurants);
       setFriendsRecommendations(friendsRecs);
+      setMyListIds(new Set(userListIds));
+      setFriendsListIds(new Set(friendsRestaurantIds));
 
       // Load Mapbox restaurants if user location is available
       if (userLocation) {
@@ -848,6 +855,9 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                   ref={mapRef}
                   restaurants={filteredAndSortedRestaurants}
                   center={mapCenter || { lat: 37.0965, lng: -113.5684 }}
+                  userLocation={userLocation}
+                  myListIds={myListIds}
+                  friendsListIds={friendsListIds}
                   height="100%"
                   onBoundsChange={setVisibleRestaurants}
                   onCenterChange={handleMapCenterChange}

@@ -1,13 +1,16 @@
 import { useMemo, useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
 import Map, { Marker, NavigationControl, Popup, MapRef } from 'react-map-gl';
 import { RestaurantRecommendation, Restaurant } from '@/lib/types';
-import { MapPin, Star } from 'lucide-react';
+import { MapPin, Star, Navigation } from 'lucide-react';
 import AddToListButton from '@/components/AddToListButton';
 
 interface MapViewProps {
   recommendations?: RestaurantRecommendation[];
   restaurants?: Restaurant[];
   center?: { lat: number; lng: number };
+  userLocation?: { lat: number; lng: number };
+  myListIds?: Set<string>;
+  friendsListIds?: Set<string>;
   height?: string;
   onRestaurantSelect?: (restaurant: Restaurant) => void;
   onBoundsChange?: (visibleRestaurants: Restaurant[]) => void;
@@ -21,7 +24,10 @@ export interface MapViewHandle {
 const MapView = forwardRef<MapViewHandle, MapViewProps>(({ 
   recommendations = [], 
   restaurants = [], 
-  center, 
+  center,
+  userLocation,
+  myListIds = new Set(),
+  friendsListIds = new Set(),
   height = '400px',
   onRestaurantSelect,
   onBoundsChange,
@@ -160,25 +166,31 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
     }
   }), [displayItems]);
 
-  // Get color based on match type - gray for all restaurants, color for personalized
+  // Get color based on list membership and match type
   const getMarkerColor = (matchType: string, restaurant: Restaurant) => {
-    // Check if this is a Mapbox restaurant (starts with "mapbox-")
-    const isMapboxRestaurant = restaurant.id.startsWith('mapbox-');
+    // Priority 1: In My List (warm coral)
+    if (myListIds.has(restaurant.id)) {
+      return '#f97316'; // orange-500 - My List (soft coral)
+    }
     
+    // Priority 2: In Friends' Lists (soft teal)
+    if (friendsListIds.has(restaurant.id)) {
+      return '#14b8a6'; // teal-500 - Friends' List
+    }
+    
+    // Priority 3: Match type based coloring
     switch (matchType) {
       case 'personal-favorite':
-        return '#ea580c'; // orange-600
+        return '#fb923c'; // orange-400
       case 'friend-recommendation':
-        return '#3b82f6'; // blue-500
+        return '#5eead4'; // teal-300
       case 'smart-match':
-        return '#10b981'; // green-500
+        return '#86efac'; // green-300
       case 'trending':
-        return '#8b5cf6'; // purple-500
+        return '#c4b5fd'; // violet-300
       case 'all-restaurants':
-        // Different colors for Mapbox vs. database restaurants
-        return isMapboxRestaurant ? '#10b981' : '#fb923c'; // green-500 for Mapbox, orange-400 for database
       default:
-        return '#6b7280'; // gray-500
+        return '#a1a1aa'; // zinc-400 - Regular restaurants (soft gray)
     }
   };
 
@@ -265,6 +277,26 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
           );
         })}
 
+        {/* User Location Pin */}
+        {userLocation && (
+          <Marker
+            latitude={userLocation.lat}
+            longitude={userLocation.lng}
+            anchor="center"
+          >
+            <div className="relative" title="You are here">
+              {/* Pulsing outer ring */}
+              <div className="absolute inset-0 w-8 h-8 bg-blue-400/30 rounded-full animate-ping" />
+              {/* Solid inner circle */}
+              <div className="relative w-8 h-8 flex items-center justify-center">
+                <div className="w-5 h-5 bg-blue-400 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+                  <Navigation className="w-3 h-3 text-white" style={{ transform: 'rotate(45deg)' }} />
+                </div>
+              </div>
+            </div>
+          </Marker>
+        )}
+
         {selectedRestaurant && (
           <Popup
             latitude={selectedRestaurant.coordinates.lat}
@@ -338,13 +370,23 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         zIndex: 1,
       }}>
         <div style={{ fontWeight: 600, marginBottom: '4px', color: '#374151' }}>Legend</div>
+        {userLocation && (
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
+            <div style={{ width: '12px', height: '12px', backgroundColor: '#60a5fa', borderRadius: '50%', marginRight: '6px', border: '2px solid white', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+            <span style={{ color: '#6b7280' }}>You</span>
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
-          <MapPin style={{ width: '14px', height: '14px', color: '#10b981', marginRight: '4px' }} />
-          <span style={{ color: '#6b7280' }}>Mapbox</span>
+          <MapPin style={{ width: '14px', height: '14px', color: '#f97316', marginRight: '4px' }} />
+          <span style={{ color: '#6b7280' }}>My List</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
+          <MapPin style={{ width: '14px', height: '14px', color: '#14b8a6', marginRight: '4px' }} />
+          <span style={{ color: '#6b7280' }}>Friend&apos;s List</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <MapPin style={{ width: '14px', height: '14px', color: '#fb923c', marginRight: '4px' }} />
-          <span style={{ color: '#6b7280' }}>Database</span>
+          <MapPin style={{ width: '14px', height: '14px', color: '#a1a1aa', marginRight: '4px' }} />
+          <span style={{ color: '#6b7280' }}>Other</span>
         </div>
       </div>
     </div>
