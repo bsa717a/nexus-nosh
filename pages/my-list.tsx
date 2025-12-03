@@ -445,7 +445,7 @@ function MyListPageContent() {
                           Name
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-orange-700">
-                          Rating
+                          My Rating
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-orange-700">
                           Address
@@ -481,14 +481,33 @@ function MyListPageContent() {
                               </div>
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-700">
-                              {restaurant.rating?.average !== undefined ? (
-                                <div className="flex items-center gap-1 text-yellow-500">
-                                  <Star className="w-4 h-4 fill-yellow-500" />
-                                  <span>{restaurant.rating.average.toFixed(1)}</span>
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">N/A</span>
-                              )}
+                              {(() => {
+                                const state = getState(restaurant.id);
+                                const rating = state.personalRating;
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    {[1, 2, 3, 4, 5].map((value) => (
+                                      <button
+                                        key={value}
+                                        type="button"
+                                        onClick={() => handleRatingClick(restaurant.id, value)}
+                                        className={`transition-all ${
+                                          (rating ?? 0) >= value
+                                            ? 'text-yellow-400 scale-110'
+                                            : 'text-gray-300 hover:text-yellow-300'
+                                        }`}
+                                      >
+                                        <Star className={`w-4 h-4 ${(rating ?? 0) >= value ? 'fill-yellow-400' : ''}`} />
+                                      </button>
+                                    ))}
+                                    {rating ? (
+                                      <span className="ml-2 font-bold text-yellow-600">{rating}.0</span>
+                                    ) : (
+                                      <span className="ml-2 text-xs text-gray-400">—</span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-600">
                               <button
@@ -556,12 +575,6 @@ function MyListPageContent() {
                                 {restaurant.name}
                               </button>
                               <div className="flex items-center gap-2">
-                                {restaurant.rating?.average !== undefined && (
-                                  <div className="flex items-center gap-1 text-yellow-500">
-                                    <Star className="w-4 h-4 fill-yellow-500" />
-                                    <span className="text-sm font-medium">{restaurant.rating.average.toFixed(1)}</span>
-                                  </div>
-                                )}
                                 <AddToListButton restaurantId={restaurant.id} restaurant={restaurant} size="sm" />
                                 <button
                                   onClick={() => handleRemove(restaurant.id)}
@@ -577,6 +590,38 @@ function MyListPageContent() {
                                 </button>
                               </div>
                             </div>
+                            
+                            {/* Personal Rating - always visible */}
+                            {(() => {
+                              const state = getState(restaurant.id);
+                              const rating = state.personalRating;
+                              return (
+                                <div className="flex items-center gap-3 mb-3 p-2 rounded-lg bg-orange-50/50">
+                                  <span className="text-sm font-medium text-gray-700">My Rating</span>
+                                  <div className="flex items-center gap-0.5">
+                                    {[1, 2, 3, 4, 5].map((value) => (
+                                      <button
+                                        key={value}
+                                        type="button"
+                                        onClick={() => handleRatingClick(restaurant.id, value)}
+                                        className={`transition-all ${
+                                          (rating ?? 0) >= value
+                                            ? 'text-yellow-400 scale-110'
+                                            : 'text-gray-300 hover:text-yellow-300'
+                                        }`}
+                                      >
+                                        <Star className={`w-5 h-5 ${(rating ?? 0) >= value ? 'fill-yellow-400' : ''}`} />
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {rating ? (
+                                    <span className="text-lg font-bold text-yellow-600">{rating}.0</span>
+                                  ) : (
+                                    <span className="text-xs text-gray-400 italic">Tap to rate</span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             
                             <div className="flex items-center text-gray-600 text-sm mb-3">
                               <MapPin className="w-4 h-4 mr-1" />

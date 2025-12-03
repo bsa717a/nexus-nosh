@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
 import Map, { Marker, NavigationControl, Popup, MapRef } from 'react-map-gl';
 import { RestaurantRecommendation, Restaurant } from '@/lib/types';
-import { MapPin, Star, Navigation } from 'lucide-react';
+import { MapPin, Star, Navigation, Heart, User, UtensilsCrossed } from 'lucide-react';
 import AddToListButton from '@/components/AddToListButton';
 
 interface MapViewProps {
@@ -166,31 +166,52 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
     }
   }), [displayItems]);
 
-  // Get color based on list membership and match type
-  const getMarkerColor = (matchType: string, restaurant: Restaurant) => {
-    // Priority 1: In My List (warm coral)
+  // Get marker type based on list membership
+  const getMarkerType = (restaurant: Restaurant): 'myList' | 'friendsList' | 'other' => {
     if (myListIds.has(restaurant.id)) {
-      return '#f97316'; // orange-500 - My List (soft coral)
+      return 'myList';
     }
-    
-    // Priority 2: In Friends' Lists (soft teal)
     if (friendsListIds.has(restaurant.id)) {
-      return '#14b8a6'; // teal-500 - Friends' List
+      return 'friendsList';
     }
-    
-    // Priority 3: Match type based coloring
-    switch (matchType) {
-      case 'personal-favorite':
-        return '#fb923c'; // orange-400
-      case 'friend-recommendation':
-        return '#5eead4'; // teal-300
-      case 'smart-match':
-        return '#86efac'; // green-300
-      case 'trending':
-        return '#c4b5fd'; // violet-300
-      case 'all-restaurants':
+    return 'other';
+  };
+
+  // Render custom marker based on type
+  const renderMarkerIcon = (type: 'myList' | 'friendsList' | 'other') => {
+    switch (type) {
+      case 'myList':
+        // Heart marker for My List - pink/red with white background
+        return (
+          <div className="relative flex items-center justify-center">
+            <div className="w-9 h-9 bg-white rounded-full shadow-lg border-2 border-rose-200 flex items-center justify-center">
+              <Heart className="w-5 h-5 text-rose-500 fill-rose-500" />
+            </div>
+            {/* Little pointer triangle at bottom */}
+            <div className="absolute -bottom-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white" style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.1))' }} />
+          </div>
+        );
+      case 'friendsList':
+        // Person marker for Friends' List - teal with white background
+        return (
+          <div className="relative flex items-center justify-center">
+            <div className="w-9 h-9 bg-white rounded-full shadow-lg border-2 border-teal-200 flex items-center justify-center">
+              <User className="w-5 h-5 text-teal-500 fill-teal-100" />
+            </div>
+            {/* Little pointer triangle at bottom */}
+            <div className="absolute -bottom-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white" style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.1))' }} />
+          </div>
+        );
+      case 'other':
       default:
-        return '#a1a1aa'; // zinc-400 - Regular restaurants (soft gray)
+        // Utensils marker for other restaurants - subtle gray
+        return (
+          <div className="relative flex items-center justify-center">
+            <div className="w-7 h-7 bg-white/90 rounded-full shadow-md border border-gray-200 flex items-center justify-center">
+              <UtensilsCrossed className="w-4 h-4 text-gray-400" />
+            </div>
+          </div>
+        );
     }
   };
 
@@ -257,7 +278,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         )}
         
         {displayItems.map((item) => {
-          const color = getMarkerColor(item.matchType, item.restaurant);
+          const markerType = getMarkerType(item.restaurant);
           return (
             <Marker
               key={item.restaurant.id}
@@ -268,12 +289,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
             >
               <div
                 className="cursor-pointer transform hover:scale-110 transition-transform"
-                style={{ color }}
                 title={item.restaurant.name}
               >
-                <MapPin className="w-8 h-8 fill-current" />
-            </div>
-          </Marker>
+                {renderMarkerIcon(markerType)}
+              </div>
+            </Marker>
           );
         })}
 
@@ -357,35 +377,43 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         )}
       </Map>
       
-      {/* Legend for marker colors */}
+      {/* Legend for marker icons */}
       <div style={{
         position: 'absolute',
         bottom: '10px',
         right: '10px',
         background: 'white',
-        padding: '8px 12px',
-        borderRadius: '6px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        fontSize: '11px',
+        padding: '10px 14px',
+        borderRadius: '12px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+        fontSize: '12px',
         zIndex: 1,
       }}>
-        <div style={{ fontWeight: 600, marginBottom: '4px', color: '#374151' }}>Legend</div>
+        <div style={{ fontWeight: 600, marginBottom: '8px', color: '#374151', fontSize: '13px' }}>Legend</div>
         {userLocation && (
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
-            <div style={{ width: '12px', height: '12px', backgroundColor: '#60a5fa', borderRadius: '50%', marginRight: '6px', border: '2px solid white', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
+            <div style={{ width: '18px', height: '18px', backgroundColor: '#60a5fa', borderRadius: '50%', marginRight: '8px', border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Navigation style={{ width: '10px', height: '10px', color: 'white', transform: 'rotate(45deg)' }} />
+            </div>
             <span style={{ color: '#6b7280' }}>You</span>
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
-          <MapPin style={{ width: '14px', height: '14px', color: '#f97316', marginRight: '4px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
+          <div style={{ width: '18px', height: '18px', backgroundColor: 'white', borderRadius: '50%', marginRight: '8px', border: '2px solid #fecdd3', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Heart style={{ width: '10px', height: '10px', color: '#f43f5e', fill: '#f43f5e' }} />
+          </div>
           <span style={{ color: '#6b7280' }}>My List</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2px' }}>
-          <MapPin style={{ width: '14px', height: '14px', color: '#14b8a6', marginRight: '4px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
+          <div style={{ width: '18px', height: '18px', backgroundColor: 'white', borderRadius: '50%', marginRight: '8px', border: '2px solid #99f6e4', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <User style={{ width: '10px', height: '10px', color: '#14b8a6' }} />
+          </div>
           <span style={{ color: '#6b7280' }}>Friend&apos;s List</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <MapPin style={{ width: '14px', height: '14px', color: '#a1a1aa', marginRight: '4px' }} />
+          <div style={{ width: '18px', height: '18px', backgroundColor: 'white', borderRadius: '50%', marginRight: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <UtensilsCrossed style={{ width: '10px', height: '10px', color: '#9ca3af' }} />
+          </div>
           <span style={{ color: '#6b7280' }}>Other</span>
         </div>
       </div>
