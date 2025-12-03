@@ -10,11 +10,11 @@ export interface User {
 
 export interface Friend {
   id: string;
-  userId: string; // The friend's user ID (if they are a user)
+  userId?: string; // The friend's user ID (if they are a user)
   email?: string; // If invited via email and not yet a user
   displayName?: string;
   photoURL?: string;
-  status: 'pending' | 'accepted' | 'ignored';
+  status: 'pending' | 'accepted' | 'ignored' | 'requested_incoming' | 'requested_outgoing';
   invitedAt: Date;
   connectedAt?: Date;
 }
