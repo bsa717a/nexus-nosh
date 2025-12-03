@@ -91,42 +91,73 @@ jobs:
         id: deploy
         run: |
           echo "Starting deployment..."
-          DEPLOY_OUTPUT=$(gcloud app deploy --quiet 2>&1 | tee deploy.log)
-          DEPLOY_EXIT=$?
-          cat deploy.log
+          # Deploy and capture output
+          gcloud app deploy --quiet --promote 2>&1 | tee deploy.log
+          DEPLOY_EXIT=${PIPESTATUS[0]}
+          
           if [ $DEPLOY_EXIT -ne 0 ]; then
             echo "::error::Deployment failed with exit code $DEPLOY_EXIT"
+            cat deploy.log
             exit $DEPLOY_EXIT
           fi
-          # Extract version ID from deployment output
-          VERSION_ID=$(grep -oP 'target version: \[\K[^\]]+' deploy.log | head -1 || echo "")
-          if [ -z "$VERSION_ID" ]; then
-            echo "Version ID not found in output, waiting and checking latest version..."
-            sleep 5
-            VERSION_ID=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
-          fi
+          
+          # Wait for deployment to fully propagate
+          echo "Waiting for deployment to propagate..."
+          sleep 10
+          
+          # Get the latest deployed version
+          VERSION_ID=$(gcloud app versions list --format="value(id)" --sort-by=~version.createTime --limit=1 --service=default)
+          
           if [ -z "$VERSION_ID" ]; then
             echo "::error::Could not determine deployed version ID"
             exit 1
           fi
+          
           echo "✓ Successfully deployed version: $VERSION_ID"
           echo "version_id=$VERSION_ID" >> $GITHUB_OUTPUT
         env:
           CLOUDSDK_CORE_PROJECT: nexus-nosh
 
-      - name: Migrate traffic to new version
+      - name: Verify and migrate traffic
         run: |
           NEW_VERSION="${{ steps.deploy.outputs.version_id }}"
+          
           if [ -z "$NEW_VERSION" ]; then
-            echo "Could not determine version ID, using latest"
-            NEW_VERSION=$(gcloud app versions list --format="value(id)" --sort-by=~creationTime --limit=1 --service=default)
+            echo "Version ID not passed from deploy step, fetching latest..."
+            NEW_VERSION=$(gcloud app versions list --format="value(id)" --sort-by=~version.createTime --limit=1 --service=default)
           fi
-          echo "Migrating 100% traffic to version: $NEW_VERSION"
-          gcloud app services set-traffic default --splits=$NEW_VERSION=1 --quiet
-          echo "✓ Traffic migration complete"
-          # Verify traffic split
-          CURRENT_TRAFFIC=$(gcloud app services describe default --format="value(split.allocations)" --quiet)
-          echo "Current traffic allocation: $CURRENT_TRAFFIC"
+          
+          if [ -z "$NEW_VERSION" ]; then
+            echo "::error::Could not determine version to migrate traffic to"
+            exit 1
+          fi
+          
+          echo "Target version: $NEW_VERSION"
+          
+          # Check current traffic allocation
+          CURRENT_VERSION=$(gcloud app services describe default --format="value(split.allocations)" | head -1 | cut -d: -f1)
+          echo "Current traffic version: $CURRENT_VERSION"
+          
+          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+            echo "✓ Traffic already on correct version: $NEW_VERSION"
+          else
+            echo "Migrating traffic from $CURRENT_VERSION to $NEW_VERSION..."
+            gcloud app services set-traffic default --splits="$NEW_VERSION=1" --quiet --migrate
+            echo "✓ Traffic migration complete"
+          fi
+          
+          # Verify final traffic allocation
+          echo "Verifying traffic allocation..."
+          FINAL_TRAFFIC=$(gcloud app services describe default --format="yaml(split)")
+          echo "$FINAL_TRAFFIC"
+          
+          # Double-check the traffic is on the new version
+          FINAL_VERSION=$(echo "$FINAL_TRAFFIC" | grep -o '[0-9]\{8\}t[0-9]\{6\}' | head -1)
+          if [ "$FINAL_VERSION" = "$NEW_VERSION" ]; then
+            echo "✓ Confirmed: 100% traffic on version $NEW_VERSION"
+          else
+            echo "::warning::Traffic may not be fully migrated. Expected $NEW_VERSION, got $FINAL_VERSION"
+          fi
         env:
           CLOUDSDK_CORE_PROJECT: nexus-nosh
 
