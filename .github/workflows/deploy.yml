@@ -87,6 +87,29 @@ jobs:
       - name: Set GCP Project
         run: gcloud config set project nexus-nosh
 
+      - name: Configure .gcloudignore for deployment
+        run: |
+          echo "Creating custom .gcloudignore for standalone deployment..."
+          # Start with ignoring everything
+          echo "*" > .gcloudignore
+          # Whitelist the necessary files for standalone runtime
+          echo "!server.js" >> .gcloudignore
+          echo "!package.json" >> .gcloudignore
+          echo "!app.yaml" >> .gcloudignore
+          echo "!public/" >> .gcloudignore
+          echo "!.next/static/" >> .gcloudignore
+          echo "!node_modules/" >> .gcloudignore
+          
+          echo "Generated .gcloudignore content:"
+          cat .gcloudignore
+
+      - name: Inject Environment Variables
+        run: |
+          # Add GEMINI_API_KEY if present in secrets
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "  GEMINI_API_KEY: \"${{ secrets.GEMINI_API_KEY }}\"" >> app.yaml
+          fi
+
       - name: Deploy to App Engine
         id: deploy
         run: |
