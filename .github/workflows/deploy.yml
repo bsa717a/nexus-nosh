@@ -55,8 +55,12 @@ jobs:
           mkdir -p deploy/.next/static
           cp -r .next/static/* deploy/.next/static/
           
-          # Copy public folder
-          cp -r public deploy/
+          # Copy public folder if it exists
+          if [ -d "public" ]; then
+            cp -r public deploy/
+          else
+            echo "No public directory found, skipping copy."
+          fi
           
           # Copy app.yaml
           cp app.yaml deploy/
