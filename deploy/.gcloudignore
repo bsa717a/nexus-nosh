@@ -1,0 +1,3 @@
+# Only ignore git metadata
+.git
+.gitignore

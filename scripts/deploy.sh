@@ -1,92 +1,67 @@
 #!/bin/bash
+# Manual deployment script for Nexus Nosh
+# Run this from the project root: ./scripts/deploy.sh
 
-# Nexus Nosh Deployment Script
-# Usage: ./scripts/deploy.sh
+set -e
 
-set -e  # Exit on error
+echo "🚀 Starting Nexus Nosh deployment..."
 
-echo "🚀 Starting Nexus Nosh Deployment..."
-
-# Colors for output
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
-# Check if gcloud is installed
-if ! command -v gcloud &> /dev/null; then
-    echo -e "${RED}❌ gcloud CLI not found. Please install Google Cloud SDK.${NC}"
-    exit 1
-fi
-
-# Check if logged in to gcloud
-if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q .; then
-    echo -e "${YELLOW}⚠️  Not logged in to gcloud. Running gcloud auth login...${NC}"
-    gcloud auth login
-fi
-
-# Check if project is set
-PROJECT=$(gcloud config get-value project 2>/dev/null)
-if [ -z "$PROJECT" ]; then
-    echo -e "${YELLOW}⚠️  No Google Cloud project set.${NC}"
-    echo "Available projects:"
-    gcloud projects list
-    echo ""
-    read -p "Enter project ID: " PROJECT
-    gcloud config set project $PROJECT
-fi
-
-echo -e "${GREEN}✓ Using project: $PROJECT${NC}"
-
-# Build the Next.js app
-echo -e "\n📦 Building Next.js app..."
+# 1. Build the Next.js app
+echo "📦 Building Next.js app..."
 npm run build
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Build failed!${NC}"
-    exit 1
+# 2. Create clean deploy directory
+echo "📁 Preparing deployment directory..."
+rm -rf deploy
+mkdir deploy
+
+# 3. Copy standalone build
+cp -r .next/standalone/* deploy/
+
+# 4. Copy static assets
+mkdir -p deploy/.next/static
+cp -r .next/static/* deploy/.next/static/
+
+# 5. Copy public folder if exists
+if [ -d "public" ]; then
+  cp -r public deploy/
 fi
 
-echo -e "${GREEN}✓ Build successful${NC}"
+# 6. Copy app.yaml
+cp app.yaml deploy/
 
-# Prepare standalone build for deployment
-echo -e "\n📦 Preparing standalone build for deployment..."
-if [ -d ".next/standalone" ]; then
-    # Copy standalone build to root (App Engine expects files at root)
-    # Save reference to original static directory before copying
-    ORIGINAL_STATIC=".next/static"
-    cp -r .next/standalone/* .
-    # Copy static assets - Next.js standalone expects .next/static relative to server.js
-    # Check if static was already copied from standalone, if not copy from original location
-    if [ ! -d ".next/static" ]; then
-        if [ -d "$ORIGINAL_STATIC" ]; then
-            echo "Copying static assets from build directory..."
-            mkdir -p .next
-            cp -r "$ORIGINAL_STATIC" .next/static
-        fi
-    fi
-    echo -e "${GREEN}✓ Standalone build prepared${NC}"
+# 7. Inject GEMINI_API_KEY (read from .env.local or environment)
+if [ -n "$GEMINI_API_KEY" ]; then
+  sed -i '' "s|GEMINI_API_KEY_PLACEHOLDER|$GEMINI_API_KEY|g" deploy/app.yaml
+elif [ -f ".env.local" ]; then
+  GEMINI_KEY=$(grep GEMINI_API_KEY .env.local | cut -d'=' -f2)
+  if [ -n "$GEMINI_KEY" ]; then
+    sed -i '' "s|GEMINI_API_KEY_PLACEHOLDER|$GEMINI_KEY|g" deploy/app.yaml
+  fi
+fi
+
+# 8. Remove build script from package.json to prevent Cloud Build from rebuilding
+echo "Modifying package.json for deployment..."
+if command -v jq &> /dev/null; then
+  jq 'del(.scripts.build)' deploy/package.json > deploy/package.json.tmp && mv deploy/package.json.tmp deploy/package.json
 else
-    echo -e "${YELLOW}⚠️  Standalone build not found, deploying from root${NC}"
+  # Fallback if jq is not available - use sed
+  sed -i '' '/"build":/d' deploy/package.json
 fi
 
-# Deploy to App Engine
-echo -e "\n☁️  Deploying to Google Cloud App Engine..."
-gcloud app deploy --quiet
+# 9. Create .gcloudignore to ensure .next is uploaded
+# By default, gcloud ignores dot-directories like .next
+echo "Creating .gcloudignore..."
+cat > deploy/.gcloudignore << 'EOF'
+# Only ignore git metadata
+.git
+.gitignore
+EOF
 
-if [ $? -eq 0 ]; then
-    echo -e "\n${GREEN}✅ Deployment successful!${NC}"
-    echo -e "\n🌐 Opening deployed app..."
-    gcloud app browse
-else
-    echo -e "${RED}❌ Deployment failed!${NC}"
-    exit 1
-fi
+# 10. Deploy from the deploy directory
+echo "🚀 Deploying to App Engine..."
+cd deploy
+gcloud app deploy --quiet --promote
 
-echo -e "\n${GREEN}🎉 Done!${NC}"
-echo ""
-echo "Useful commands:"
-echo "  View logs:     gcloud app logs tail -s default"
-echo "  View services: gcloud app services list"
-echo "  Open app:      gcloud app browse"
-
+echo "✅ Deployment complete!"
+echo "🌐 Visit: https://nexus-nosh.uc.r.appspot.com"
