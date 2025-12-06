@@ -65,6 +65,12 @@ jobs:
           # Copy app.yaml
           cp app.yaml deploy/
           
+          # FIX: Reconstruct the necessary .next structure
+          # server.js expects to find .next/BUILD_ID and .next/server
+          cp -r .next/server deploy/.next/
+          cp .next/BUILD_ID deploy/.next/
+          cp .next/*.json deploy/.next/
+          
           # CRITICAL FIX: Remove 'build' script from package.json
           # This prevents App Engine from trying to rebuild the app (which fails because we only uploaded standalone files)
           # We use a temporary file to safely modify package.json
