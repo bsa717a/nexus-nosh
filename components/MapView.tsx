@@ -15,6 +15,7 @@ interface MapViewProps {
   onRestaurantSelect?: (restaurant: Restaurant) => void;
   onBoundsChange?: (visibleRestaurants: Restaurant[]) => void;
   onCenterChange?: (center: { lat: number; lng: number }) => void;
+  onRestaurantInfoClick?: (restaurant: Restaurant) => void;
 }
 
 export interface MapViewHandle {
@@ -31,7 +32,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
   height = '400px',
   onRestaurantSelect,
   onBoundsChange,
-  onCenterChange
+  onCenterChange,
+  onRestaurantInfoClick
 }, ref) => {
   // Mapbox token with fallback (public token, safe to include)
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || 'pk.eyJ1IjoiYnNhNzE3IiwiYSI6ImNtaG13YnZvczIxcHIybXB1N2E0NnJpcHcifQ.Z-AeF3-pt2ihl2uz71Lvxg';
@@ -204,11 +206,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         );
       case 'other':
       default:
-        // Utensils marker for other restaurants - subtle gray
+        // Utensils marker for other restaurants - blue
         return (
           <div className="relative flex items-center justify-center">
-            <div className="w-7 h-7 bg-white/90 rounded-full shadow-md border border-gray-200 flex items-center justify-center">
-              <UtensilsCrossed className="w-4 h-4 text-gray-400" />
+            <div className="w-7 h-7 bg-white/90 rounded-full shadow-md border border-blue-200 flex items-center justify-center">
+              <UtensilsCrossed className="w-4 h-4 text-blue-500" />
             </div>
           </div>
         );
@@ -372,6 +374,18 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                   ${selectedRestaurant.priceRange.min} - ${selectedRestaurant.priceRange.max}
                 </div>
               )}
+              
+              <button 
+                onClick={(e) => {
+                   e.stopPropagation();
+                   if (onRestaurantInfoClick) {
+                     onRestaurantInfoClick(selectedRestaurant);
+                   }
+                }}
+                className="w-full mt-2 bg-orange-50 text-orange-600 text-xs font-medium py-1.5 rounded hover:bg-orange-100 transition-colors"
+              >
+                More Info & Menu
+              </button>
             </div>
           </Popup>
         )}
@@ -411,8 +425,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
           <span style={{ color: '#6b7280' }}>Friend&apos;s List</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{ width: '18px', height: '18px', backgroundColor: 'white', borderRadius: '50%', marginRight: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <UtensilsCrossed style={{ width: '10px', height: '10px', color: '#9ca3af' }} />
+          <div style={{ width: '18px', height: '18px', backgroundColor: 'white', borderRadius: '50%', marginRight: '8px', border: '1px solid #bfdbfe', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <UtensilsCrossed style={{ width: '10px', height: '10px', color: '#3b82f6' }} />
           </div>
           <span style={{ color: '#6b7280' }}>Other</span>
         </div>

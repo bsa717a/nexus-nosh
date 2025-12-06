@@ -14,6 +14,7 @@ import { searchMapboxRestaurants, geocodeZipCode, searchRestaurantsByName } from
 import { getFriendsHighlyRatedRestaurants, FriendRecommendedRestaurant, getAllFriendsRestaurantIds } from '@/lib/services/friends/friendService';
 import MapView, { MapViewHandle } from '@/components/MapView';
 import AddToListButton from '@/components/AddToListButton';
+import RestaurantDetailModal from '@/components/RestaurantDetailModal';
 
 interface DashboardProps {
   userId: string;
@@ -47,6 +48,8 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
   const [friendsListIds, setFriendsListIds] = useState<Set<string>>(new Set());
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const zipGeocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
 
   // Removed excessive debug logging that could cause performance issues
 
@@ -543,6 +546,11 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
     }
   };
 
+  const handleShowDetails = (restaurant: Restaurant) => {
+    setSelectedRestaurant(restaurant);
+    setDetailsModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 pb-24">
       {/* Header */}
@@ -596,6 +604,15 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
               >
                 {topPick?.restaurant?.name || 'Restaurant'}
               </h2>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (topPick?.restaurant) handleShowDetails(topPick.restaurant);
+                }}
+                className="text-sm text-orange-500 font-medium hover:underline px-2 py-1"
+              >
+                More
+              </button>
               {topPick?.restaurant?.id && (
                 <AddToListButton restaurantId={topPick.restaurant.id} restaurant={topPick.restaurant} size="sm" />
               )}
@@ -687,6 +704,12 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                         </p>
                       </div>
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <button 
+                          onClick={() => handleShowDetails(rec.restaurant)}
+                          className="text-xs text-gray-400 hover:text-orange-500 font-medium"
+                        >
+                          More
+                        </button>
                         <AddToListButton restaurantId={rec.restaurant.id} restaurant={rec.restaurant} size="sm" />
                         <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-orange-400 transition-colors flex-shrink-0" />
                       </div>
@@ -861,6 +884,7 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
                   height="100%"
                   onBoundsChange={setVisibleRestaurants}
                   onCenterChange={handleMapCenterChange}
+                  onRestaurantInfoClick={handleShowDetails}
                 />
                 {loadingMapbox && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-white/95 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 z-10">
@@ -906,6 +930,12 @@ export default function Dashboard({ userId, userLocation, userName = 'Derek' }: 
       </motion.section>
 
       <BottomNav />
+
+      <RestaurantDetailModal 
+        isOpen={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        restaurant={selectedRestaurant}
+      />
     </div>
   );
 }

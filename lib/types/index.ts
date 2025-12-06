@@ -109,6 +109,19 @@ export interface Restaurant {
   
   // Source tracking
   source?: 'mapbox' | 'database' | 'user-created';
+
+  // AI Enrichment
+  aiSummary?: {
+    vibeDescription: string;
+    quietness: number;
+    priceBucket: string;
+    popularDishes: string[];
+    goodForGroups: boolean;
+    goodForBusiness: boolean;
+    goodForDates: boolean;
+    lastUpdated: string;
+    source: string;
+  };
 }
 
 // Rating Types
