@@ -92,16 +92,34 @@ jobs:
           echo "Creating custom .gcloudignore for standalone deployment..."
           # Start with ignoring everything
           echo "*" > .gcloudignore
+          
           # Whitelist the necessary files for standalone runtime
+          # server.js and package.json
           echo "!server.js" >> .gcloudignore
           echo "!package.json" >> .gcloudignore
           echo "!app.yaml" >> .gcloudignore
+          
+          # Directories (need /** to unignore contents recursively in some gitignore implementations)
           echo "!public/" >> .gcloudignore
-          echo "!.next/static/" >> .gcloudignore
+          echo "!public/**" >> .gcloudignore
+          
+          echo "!.next/" >> .gcloudignore
+          echo "!.next/**" >> .gcloudignore
+          
           echo "!node_modules/" >> .gcloudignore
+          echo "!node_modules/**" >> .gcloudignore
           
           echo "Generated .gcloudignore content:"
           cat .gcloudignore
+          
+      - name: Debug checks before deploy
+        run: |
+          echo "Listing root files:"
+          ls -lh
+          echo "Checking node_modules size:"
+          du -sh node_modules || echo "node_modules not found"
+          echo "Checking .next structure:"
+          ls -R .next | head -n 20
 
       - name: Inject Environment Variables
         run: |
