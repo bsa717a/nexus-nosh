@@ -67,7 +67,10 @@ jobs:
           
           # FIX: Reconstruct the necessary .next structure
           # server.js expects to find .next/BUILD_ID and .next/server
-          cp -r .next/server deploy/.next/
+          # We must copy these FROM THE STANDALONE BUILD output to ensure consistency
+          cp -r .next/standalone/.next/server deploy/.next/
+          
+          # Copy other manifests from root .next just in case
           cp .next/BUILD_ID deploy/.next/
           cp .next/*.json deploy/.next/
           
