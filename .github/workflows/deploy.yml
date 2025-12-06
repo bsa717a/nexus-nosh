@@ -99,9 +99,41 @@ jobs:
           echo "Generated .gcloudignore:"
           cat deploy/.gcloudignore
           
+          # DEBUG: Check size before rename
           echo "Checking standalone node_modules size:"
           du -sh deploy/node_modules
           find deploy/node_modules -type f | wc -l || echo "Cannot count files"
+          
+          # HACK: Rename node_modules to bypass gcloud's forced ignore of this directory
+          mv deploy/node_modules deploy/node_modules_bundled
+          
+          # Create entrypoint script to restore node_modules and start
+          echo '#!/bin/sh' > deploy/entrypoint.sh
+          echo 'echo "Restoring node_modules..."' >> deploy/entrypoint.sh
+          echo 'ln -s node_modules_bundled node_modules' >> deploy/entrypoint.sh
+          echo 'echo "Starting server..."' >> deploy/entrypoint.sh
+          echo 'exec node server.js' >> deploy/entrypoint.sh
+          chmod +x deploy/entrypoint.sh
+          
+          # Update app.yaml to use the entrypoint
+          echo "entrypoint: ./entrypoint.sh" >> deploy/app.yaml
+          
+          # Update .gcloudignore to allow the new folder
+          echo "*" > deploy/.gcloudignore
+          echo "!server.js" >> deploy/.gcloudignore
+          echo "!package.json" >> deploy/.gcloudignore
+          echo "!app.yaml" >> deploy/.gcloudignore
+          echo "!entrypoint.sh" >> deploy/.gcloudignore
+          echo "!public/" >> deploy/.gcloudignore
+          echo "!public/**" >> deploy/.gcloudignore
+          echo "!.next/" >> deploy/.gcloudignore
+          echo "!.next/**" >> deploy/.gcloudignore
+          echo "!node_modules_bundled/" >> deploy/.gcloudignore
+          echo "!node_modules_bundled/**" >> deploy/.gcloudignore
+          
+          # Debug: verify .gcloudignore content
+          echo "Generated .gcloudignore:"
+          cat deploy/.gcloudignore
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
