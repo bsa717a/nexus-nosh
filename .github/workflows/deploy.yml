@@ -94,32 +94,32 @@ jobs:
           echo "*" > .gcloudignore
           
           # Whitelist the necessary files for standalone runtime
-          # server.js and package.json
           echo "!server.js" >> .gcloudignore
           echo "!package.json" >> .gcloudignore
+          echo "!package-lock.json" >> .gcloudignore
           echo "!app.yaml" >> .gcloudignore
           
-          # Directories (need /** to unignore contents recursively in some gitignore implementations)
+          # Directories
           echo "!public/" >> .gcloudignore
           echo "!public/**" >> .gcloudignore
           
           echo "!.next/" >> .gcloudignore
           echo "!.next/**" >> .gcloudignore
           
-          echo "!node_modules/" >> .gcloudignore
-          echo "!node_modules/**" >> .gcloudignore
+          # Explicitly ignore node_modules so App Engine installs them
+          echo "node_modules/" >> .gcloudignore
           
           echo "Generated .gcloudignore content:"
           cat .gcloudignore
           
-      - name: Debug checks before deploy
+      - name: Ensure package-lock.json is present
         run: |
-          echo "Listing root files:"
-          ls -lh
-          echo "Checking node_modules size:"
-          du -sh node_modules || echo "node_modules not found"
-          echo "Checking .next structure:"
-          ls -R .next | head -n 20
+          if [ -f "package-lock.json" ]; then
+             echo "package-lock.json found."
+          else
+             echo "::error::package-lock.json is missing! Deployment requires it for stable builds."
+             exit 1
+          fi
 
       - name: Inject Environment Variables
         run: |
