@@ -80,7 +80,16 @@ jobs:
           jq 'del(.scripts.build)' deploy/package.json > deploy/package.json.tmp && mv deploy/package.json.tmp deploy/package.json
           
           # Setup .gcloudignore in deploy dir to ignore nothing (we only put what we want in there)
-          # We might want to verify node_modules size
+          # Specifically UN-IGNORE node_modules so they are uploaded
+          # '!' at the start of a line means "include this" (un-ignore)
+          # But in .gcloudignore, standard gitignore rules apply.
+          # To include everything, we can just making it empty or explicitly whitelist.
+          
+          echo ".gcloudignore" > deploy/.gcloudignore
+          echo ".git" >> deploy/.gcloudignore
+          echo ".gitignore" >> deploy/.gcloudignore
+          # We want everything else in 'deploy/' to be uploaded
+          
           echo "Checking standalone node_modules size:"
           du -sh deploy/node_modules
           find deploy/node_modules -type f | wc -l || echo "Cannot count files"
