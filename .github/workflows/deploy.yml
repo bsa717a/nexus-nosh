@@ -105,9 +105,12 @@ jobs:
 
       - name: Inject Environment Variables
         run: |
-          # Add GEMINI_API_KEY if present in secrets
+          # Replace GEMINI_API_KEY_PLACEHOLDER with actual secret
+          # Use a different delimiter (|) in case the key contains slashes
           if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-            echo "  GEMINI_API_KEY: \"${{ secrets.GEMINI_API_KEY }}\"" >> app.yaml
+            sed -i "s|GEMINI_API_KEY_PLACEHOLDER|${{ secrets.GEMINI_API_KEY }}|g" app.yaml
+          else
+            echo "::warning::GEMINI_API_KEY secret not found, leaving placeholder"
           fi
 
       - name: Deploy to App Engine
