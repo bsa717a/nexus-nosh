@@ -65,6 +65,11 @@ jobs:
           # Copy app.yaml
           cp app.yaml deploy/
           
+          # CRITICAL FIX: Remove 'build' script from package.json
+          # This prevents App Engine from trying to rebuild the app (which fails because we only uploaded standalone files)
+          # We use a temporary file to safely modify package.json
+          jq 'del(.scripts.build)' deploy/package.json > deploy/package.json.tmp && mv deploy/package.json.tmp deploy/package.json
+          
           # Setup .gcloudignore in deploy dir to ignore nothing (we only put what we want in there)
           # We might want to verify node_modules size
           echo "Checking standalone node_modules size:"
