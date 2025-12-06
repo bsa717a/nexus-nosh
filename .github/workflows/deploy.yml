@@ -43,38 +43,29 @@ jobs:
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           NEXT_PUBLIC_MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
 
-      - name: Prepare standalone build for deployment
+      - name: Prepare deployment directory
         run: |
-          # Verify standalone build exists
-          if [ ! -d ".next/standalone" ]; then
-            echo "::error::Standalone build not found. Build may have failed."
-            exit 1
-          fi
-          # Copy standalone build to root (App Engine expects files at root)
-          echo "Copying standalone build files..."
-          # Save reference to original static directory before copying
-          ORIGINAL_STATIC=".next/static"
-          cp -r .next/standalone/* .
-          # Copy static assets - Next.js standalone expects .next/static relative to server.js
-          # Check if static was already copied from standalone, if not copy from original location
-          if [ ! -d ".next/static" ]; then
-            if [ -d "$ORIGINAL_STATIC" ]; then
-              echo "Copying static assets from build directory..."
-              mkdir -p .next
-              cp -r "$ORIGINAL_STATIC" .next/static
-              echo "✓ Static assets copied"
-            else
-              echo "⚠️  .next/static not found"
-            fi
-          else
-            echo "✓ Static assets already present (copied from standalone)"
-          fi
-          # Verify required files exist
-          echo "Verifying deployment files:"
-          test -f server.js && echo "✓ server.js found" || (echo "✗ server.js missing" && exit 1)
-          test -f package.json && echo "✓ package.json found" || (echo "✗ package.json missing" && exit 1)
-          test -f app.yaml && echo "✓ app.yaml found" || (echo "✗ app.yaml missing" && exit 1)
-          echo "✓ All required files present"
+          echo "Preparing clean deployment directory..."
+          mkdir deploy
+          
+          # Copy standalone build to deploy dir
+          cp -r .next/standalone/* deploy/
+          
+          # Copy static assets (required for Next.js)
+          mkdir -p deploy/.next/static
+          cp -r .next/static/* deploy/.next/static/
+          
+          # Copy public folder
+          cp -r public deploy/
+          
+          # Copy app.yaml
+          cp app.yaml deploy/
+          
+          # Setup .gcloudignore in deploy dir to ignore nothing (we only put what we want in there)
+          # We might want to verify node_modules size
+          echo "Checking standalone node_modules size:"
+          du -sh deploy/node_modules
+          find deploy/node_modules -type f | wc -l || echo "Cannot count files"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -87,46 +78,12 @@ jobs:
       - name: Set GCP Project
         run: gcloud config set project nexus-nosh
 
-      - name: Configure .gcloudignore for deployment
-        run: |
-          echo "Creating custom .gcloudignore for standalone deployment..."
-          # Start with ignoring everything
-          echo "*" > .gcloudignore
-          
-          # Whitelist the necessary files for standalone runtime
-          echo "!server.js" >> .gcloudignore
-          echo "!package.json" >> .gcloudignore
-          echo "!package-lock.json" >> .gcloudignore
-          echo "!app.yaml" >> .gcloudignore
-          
-          # Directories
-          echo "!public/" >> .gcloudignore
-          echo "!public/**" >> .gcloudignore
-          
-          echo "!.next/" >> .gcloudignore
-          echo "!.next/**" >> .gcloudignore
-          
-          # Explicitly ignore node_modules so App Engine installs them
-          echo "node_modules/" >> .gcloudignore
-          
-          echo "Generated .gcloudignore content:"
-          cat .gcloudignore
-          
-      - name: Ensure package-lock.json is present
-        run: |
-          if [ -f "package-lock.json" ]; then
-             echo "package-lock.json found."
-          else
-             echo "::error::package-lock.json is missing! Deployment requires it for stable builds."
-             exit 1
-          fi
-
       - name: Inject Environment Variables
         run: |
           # Replace GEMINI_API_KEY_PLACEHOLDER with actual secret
-          # Use a different delimiter (|) in case the key contains slashes
+          # Perform replacement in the deploy/app.yaml
           if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-            sed -i "s|GEMINI_API_KEY_PLACEHOLDER|${{ secrets.GEMINI_API_KEY }}|g" app.yaml
+            sed -i "s|GEMINI_API_KEY_PLACEHOLDER|${{ secrets.GEMINI_API_KEY }}|g" deploy/app.yaml
           else
             echo "::warning::GEMINI_API_KEY secret not found, leaving placeholder"
           fi
@@ -135,19 +92,20 @@ jobs:
         id: deploy
         run: |
           echo "Starting deployment..."
+          cd deploy
+          
           # Deploy and capture output
-          gcloud app deploy --quiet --promote 2>&1 | tee deploy.log
+          gcloud app deploy --quiet --promote 2>&1 | tee ../deploy.log
           DEPLOY_EXIT=${PIPESTATUS[0]}
           
           if [ $DEPLOY_EXIT -ne 0 ]; then
             echo "::error::Deployment failed with exit code $DEPLOY_EXIT"
-            cat deploy.log
+            cat ../deploy.log
             exit $DEPLOY_EXIT
           fi
           
-          # Wait for deployment to fully propagate
-          echo "Waiting for deployment to propagate..."
-          sleep 10
+          # Wait and get version as before...
+          cd ..
           
           # Get the latest deployed version
           VERSION_ID=$(gcloud app versions list --format="value(id)" --sort-by=~version.createTime --limit=1 --service=default)
