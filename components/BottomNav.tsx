@@ -1,5 +1,5 @@
 import { useRouter } from 'next/router';
-import { Home, UtensilsCrossed, User, Settings, LogOut, Heart, Users } from 'lucide-react';
+import { Home, UtensilsCrossed, User, LogOut, Heart, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth/useAuth';
 
 const navItems = [
@@ -8,7 +8,6 @@ const navItems = [
   { href: '/my-list', icon: Heart, label: 'My List' },
   { href: '/friends', icon: Users, label: 'Friends' },
   { href: '/profile', icon: User, label: 'Profile' },
-  { href: '/settings', icon: Settings, label: 'Settings' },
 ];
 
 export default function BottomNav() {
@@ -32,7 +31,7 @@ export default function BottomNav() {
           <div className="flex justify-around items-center">
             {navItems.map(({ href, icon: Icon, label }) => {
               const isActive = currentPath === href;
-              
+
               return (
                 <button
                   key={href}
@@ -40,20 +39,18 @@ export default function BottomNav() {
                   className="flex flex-col items-center py-2 px-3 group"
                 >
                   <div
-                    className={`p-2 rounded-2xl transition-all duration-200 ${
-                      isActive
+                    className={`p-2 rounded-2xl transition-all duration-200 ${isActive
                         ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
                         : 'text-gray-400 group-hover:text-orange-500 group-hover:bg-orange-50'
-                    }`}
+                      }`}
                   >
                     <Icon className="w-5 h-5" />
                   </div>
                   <span
-                    className={`text-xs font-medium mt-1 transition-colors ${
-                      isActive
+                    className={`text-xs font-medium mt-1 transition-colors ${isActive
                         ? 'text-orange-600'
                         : 'text-gray-400 group-hover:text-orange-500'
-                    }`}
+                      }`}
                   >
                     {label}
                   </span>

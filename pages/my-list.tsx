@@ -15,9 +15,12 @@ import {
 } from '@/lib/services/restaurants/userRestaurantStateService';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Heart, MapPin, Star, DollarSign, Clock, List, Grid, Trash2, Loader2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Heart, MapPin, Star, DollarSign, Clock, List, Grid, Trash2, Loader2, Camera, Plus, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import AddToListButton from '@/components/AddToListButton';
+import { storage } from '@/lib/firebase/config';
+import { ref, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
+
 
 function MyListPageContent() {
   const { user } = useAuth();
@@ -31,7 +34,9 @@ function MyListPageContent() {
   const [userRestaurantStates, setUserRestaurantStates] = useState<Record<string, UserRestaurantState>>({});
   const [expandedRestaurants, setExpandedRestaurants] = useState<Record<string, boolean>>({});
   const [savingStates, setSavingStates] = useState<Record<string, boolean>>({});
+  const [uploadingStates, setUploadingStates] = useState<Record<string, boolean>>({});
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const noteSaveTimeouts = useRef<Record<string, NodeJS.Timeout>>({});
 
   useEffect(() => {
@@ -90,7 +95,7 @@ function MyListPageContent() {
 
   const loadRestaurants = async () => {
     if (!user) return;
-    
+
     setLoading(true);
     setError(null);
     try {
@@ -106,7 +111,7 @@ function MyListPageContent() {
 
   const handleRemove = async (restaurantId: string) => {
     if (!user) return;
-    
+
     setRemovingIds((prev) => new Set(prev).add(restaurantId));
     try {
       await removeRestaurantFromList(user.uid, restaurantId);
@@ -145,6 +150,7 @@ function MyListPageContent() {
       hasBeen: false,
       personalRating: undefined,
       notes: '',
+      userUploadedPhotos: [],
       updatedAt: new Date(),
     };
   }
@@ -211,6 +217,84 @@ function MyListPageContent() {
     persistStateChanges(restaurantId, { personalRating: rating });
   }
 
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+
+  const handleImageUpload = async (restaurantId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploadErrors(prev => ({ ...prev, [restaurantId]: '' }));
+    setUploadingStates(prev => ({ ...prev, [restaurantId]: true }));
+
+    const resizeImage = (file: File): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            const MAX_WIDTH = 800;
+            const MAX_HEIGHT = 800;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { reject(new Error('Canvas context failed')); return; }
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+          };
+          img.onerror = () => reject(new Error('Failed to load image for resizing'));
+          img.src = e.target?.result as string;
+        };
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
+    };
+
+    try {
+      const base64 = await resizeImage(file);
+
+      // Safety check for Firestore size limit (1MB total doc size)
+      if (base64.length > 700000) {
+        throw new Error("Image is too large even after compression. Please try a smaller photo.");
+      }
+
+      const currentState = getState(restaurantId);
+      const currentPhotos = currentState.userUploadedPhotos || [];
+      const newPhotos = [base64, ...currentPhotos];
+
+      persistStateChanges(restaurantId, { userUploadedPhotos: newPhotos });
+      console.log('[ImageUpload] Saved base64 image directly to Firestore');
+    } catch (error: any) {
+      console.error("Error processing image: ", error);
+      setUploadErrors(prev => ({ ...prev, [restaurantId]: error.message || "Failed to process image" }));
+    } finally {
+      setUploadingStates(prev => ({ ...prev, [restaurantId]: false }));
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveImage = (restaurantId: string, photoUrlToRemove: string) => {
+    const currentState = getState(restaurantId);
+    if (!currentState.userUploadedPhotos) return;
+
+    const newPhotos = currentState.userUploadedPhotos.filter(url => url !== photoUrlToRemove);
+    persistStateChanges(restaurantId, { userUploadedPhotos: newPhotos });
+  };
+
   function renderDetails(restaurant: Restaurant) {
     const state = getState(restaurant.id);
     const saving = savingStates[restaurant.id];
@@ -218,87 +302,142 @@ function MyListPageContent() {
     const effectiveRating = state.personalRating;
 
     return (
-      <div className="mt-4 space-y-4 rounded-xl bg-orange-50/60 p-4 border border-orange-100">
-        <div className="flex flex-wrap gap-6 text-sm text-gray-700">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={state.wantToGo}
-              onChange={(event) =>
-                persistStateChanges(restaurant.id, { wantToGo: event.target.checked })
-              }
-              className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1"
-            />
-            <span>I want to go</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={state.hasBeen}
-              onChange={(event) =>
-                persistStateChanges(restaurant.id, { hasBeen: event.target.checked })
-              }
-              className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1"
-            />
-            <span>I have been there</span>
-          </label>
-        </div>
+      <div className="mt-1 space-y-4 rounded-xl bg-orange-50/60 p-4 border border-orange-100">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-12 text-sm text-gray-700">
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={state.wantToGo}
+                onChange={(event) =>
+                  persistStateChanges(restaurant.id, { wantToGo: event.target.checked })
+                }
+                className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer"
+              />
+              <span>I want to go</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={state.hasBeen}
+                onChange={(event) =>
+                  persistStateChanges(restaurant.id, { hasBeen: event.target.checked })
+                }
+                className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer"
+              />
+              <span>I have been there</span>
+            </label>
+          </div>
 
-        <div className="flex flex-col md:flex-row md:items-center md:gap-4 text-sm text-gray-700">
-          <label className="md:w-60 font-medium text-gray-800">My personal rating</label>
-          <div className="flex items-center gap-2">
-            {[1, 2, 3, 4, 5].map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => handleRatingClick(restaurant.id, value)}
-                className={`transition ${
-                  (effectiveRating ?? 0) >= value
+          <div className="flex items-center gap-4">
+            <label className="font-medium text-gray-800">My personal rating</label>
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => handleRatingClick(restaurant.id, value)}
+                  className={`transition p-0.5 ${(effectiveRating ?? 0) >= value
                     ? 'text-yellow-500'
                     : 'text-gray-300 hover:text-yellow-400'
-                }`}
-              >
-                <Star className="w-6 h-6" />
-              </button>
-            ))}
-            {effectiveRating ? (
-              <span className="text-sm text-gray-600">{effectiveRating.toFixed(1)}</span>
-            ) : (
-              <span className="text-xs text-gray-500">Click to rate</span>
-            )}
+                    }`}
+                >
+                  <Star className="w-6 h-6 fill-current" />
+                </button>
+              ))}
+              {effectiveRating ? (
+                <span className="text-sm text-gray-600 ml-2 font-medium">{effectiveRating.toFixed(1)}</span>
+              ) : (
+                <span className="text-xs text-gray-500 ml-2">Click to rate</span>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="flex flex-col text-sm text-gray-700">
-          <label className="font-medium text-gray-800 mb-1">Personal notes</label>
-          <textarea
-            value={currentDraftNotes ?? state.notes ?? ''}
-            onChange={(event) => {
-              const value = event.target.value;
-              setDraftNotes((prev) => ({ ...prev, [restaurant.id]: value }));
-              updateLocalState(restaurant.id, { notes: value });
+          <label className="font-medium text-gray-800 mb-1">Personal notes & Photos</label>
+          <div className="flex gap-4 items-start">
+            <textarea
+              value={currentDraftNotes ?? state.notes ?? ''}
+              onChange={(event) => {
+                const value = event.target.value;
+                setDraftNotes((prev) => ({ ...prev, [restaurant.id]: value }));
+                updateLocalState(restaurant.id, { notes: value });
 
-              if (noteSaveTimeouts.current[restaurant.id]) {
-                clearTimeout(noteSaveTimeouts.current[restaurant.id]);
-              }
+                if (noteSaveTimeouts.current[restaurant.id]) {
+                  clearTimeout(noteSaveTimeouts.current[restaurant.id]);
+                }
 
-              noteSaveTimeouts.current[restaurant.id] = setTimeout(() => {
-                persistStateChanges(restaurant.id, { notes: value });
-                delete noteSaveTimeouts.current[restaurant.id];
-              }, 800);
-            }}
-            onBlur={() => {
-              const noteValue = draftNotes[restaurant.id] ?? state.notes ?? '';
-              if (noteSaveTimeouts.current[restaurant.id]) {
-                clearTimeout(noteSaveTimeouts.current[restaurant.id]);
-                delete noteSaveTimeouts.current[restaurant.id];
-              }
-              persistStateChanges(restaurant.id, { notes: noteValue });
-            }}
-            rows={3}
-            placeholder="Add your thoughts, meal ideas, or who you'd like to bring."
-            className="w-full rounded-lg border border-orange-200 px-3 py-2 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-orange-500 text-white placeholder:text-orange-100"
-          />
+                noteSaveTimeouts.current[restaurant.id] = setTimeout(() => {
+                  persistStateChanges(restaurant.id, { notes: value });
+                  delete noteSaveTimeouts.current[restaurant.id];
+                }, 800);
+              }}
+              onBlur={() => {
+                const noteValue = draftNotes[restaurant.id] ?? state.notes ?? '';
+                if (noteSaveTimeouts.current[restaurant.id]) {
+                  clearTimeout(noteSaveTimeouts.current[restaurant.id]);
+                  delete noteSaveTimeouts.current[restaurant.id];
+                }
+                persistStateChanges(restaurant.id, { notes: noteValue });
+              }}
+              rows={3}
+              placeholder="Add your thoughts, meal ideas, or who you'd like to bring."
+              className="flex-1 w-full rounded-lg border border-orange-200 px-3 py-2 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-orange-500 text-white placeholder:text-orange-100 min-h-[96px]"
+            />
+
+            <div className="flex-shrink-0">
+              <input
+                type="file"
+                id={`upload-${restaurant.id}`}
+                className="hidden"
+                accept="image/*"
+                onChange={(e) => handleImageUpload(restaurant.id, e)}
+                disabled={uploadingStates[restaurant.id]}
+              />
+
+              {state.userUploadedPhotos && state.userUploadedPhotos.length > 0 ? (
+                <div
+                  className="relative w-24 h-[96px] group cursor-pointer"
+                  onClick={() => state.userUploadedPhotos?.[0] && setSelectedImage(state.userUploadedPhotos[0])}
+                >
+                  <img
+                    src={state.userUploadedPhotos[0]}
+                    alt="Personal note"
+                    className="w-full h-full object-cover rounded-lg border border-orange-200 transition-transform hover:scale-105"
+                  />
+                  <button
+                    onClick={() => handleRemoveImage(restaurant.id, state.userUploadedPhotos![0])}
+                    className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-50"
+                  >
+                    <X className="w-3 h-3 text-red-500" />
+                  </button>
+                  {state.userUploadedPhotos.length > 1 && (
+                    <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                      +{state.userUploadedPhotos.length - 1}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <label
+                  htmlFor={`upload-${restaurant.id}`}
+                  className={`flex flex-col items-center justify-center w-24 h-[96px] border-2 border-dashed border-orange-200 rounded-lg cursor-pointer hover:bg-orange-50 hover:border-orange-300 transition-colors bg-white/50 ${uploadingStates[restaurant.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {uploadingStates[restaurant.id] ? (
+                    <Loader2 className="w-6 h-6 text-orange-400 animate-spin" />
+                  ) : (
+                    <>
+                      <Camera className="w-6 h-6 text-orange-400 mb-1" />
+                      <span className="text-[10px] text-orange-400 font-medium whitespace-nowrap">Add Photo</span>
+                    </>
+                  )}
+                </label>
+              )}
+            </div>
+          </div>
+          {uploadErrors[restaurant.id] && (
+            <p className="text-xs text-red-500 mt-1 max-w-[200px]">{uploadErrors[restaurant.id]}</p>
+          )}
         </div>
 
         {saving && <p className="text-xs text-orange-500">Saving…</p>}
@@ -344,7 +483,7 @@ function MyListPageContent() {
                   </p>
                 </div>
               </div>
-              
+
               {restaurants.length > 0 && (
                 <button
                   type="button"
@@ -377,14 +516,12 @@ function MyListPageContent() {
                     </>
                   )}
                   <span
-                    className={`relative inline-flex h-5 w-10 items-center rounded-full transition ${
-                      isListView ? 'bg-orange-500' : 'bg-gray-300'
-                    }`}
+                    className={`relative inline-flex h-5 w-10 items-center rounded-full transition ${isListView ? 'bg-orange-500' : 'bg-gray-300'
+                      }`}
                   >
                     <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
-                        isListView ? 'translate-x-5' : 'translate-x-1'
-                      }`}
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${isListView ? 'translate-x-5' : 'translate-x-1'
+                        }`}
                     />
                   </span>
                 </button>
@@ -491,11 +628,10 @@ function MyListPageContent() {
                                         key={value}
                                         type="button"
                                         onClick={() => handleRatingClick(restaurant.id, value)}
-                                        className={`transition-all ${
-                                          (rating ?? 0) >= value
-                                            ? 'text-yellow-400 scale-110'
-                                            : 'text-gray-300 hover:text-yellow-300'
-                                        }`}
+                                        className={`transition-all ${(rating ?? 0) >= value
+                                          ? 'text-yellow-400 scale-110'
+                                          : 'text-gray-300 hover:text-yellow-300'
+                                          }`}
                                       >
                                         <Star className={`w-4 h-4 ${(rating ?? 0) >= value ? 'fill-yellow-400' : ''}`} />
                                       </button>
@@ -590,7 +726,7 @@ function MyListPageContent() {
                                 </button>
                               </div>
                             </div>
-                            
+
                             {/* Personal Rating - always visible */}
                             {(() => {
                               const state = getState(restaurant.id);
@@ -604,11 +740,10 @@ function MyListPageContent() {
                                         key={value}
                                         type="button"
                                         onClick={() => handleRatingClick(restaurant.id, value)}
-                                        className={`transition-all ${
-                                          (rating ?? 0) >= value
-                                            ? 'text-yellow-400 scale-110'
-                                            : 'text-gray-300 hover:text-yellow-300'
-                                        }`}
+                                        className={`transition-all ${(rating ?? 0) >= value
+                                          ? 'text-yellow-400 scale-110'
+                                          : 'text-gray-300 hover:text-yellow-300'
+                                          }`}
                                       >
                                         <Star className={`w-5 h-5 ${(rating ?? 0) >= value ? 'fill-yellow-400' : ''}`} />
                                       </button>
@@ -622,7 +757,7 @@ function MyListPageContent() {
                                 </div>
                               );
                             })()}
-                            
+
                             <div className="flex items-center text-gray-600 text-sm mb-3">
                               <MapPin className="w-4 h-4 mr-1" />
                               <button
@@ -681,6 +816,38 @@ function MyListPageContent() {
         </div>
         <BottomNav />
       </div>
+
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+            onClick={() => setSelectedImage(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={selectedImage}
+                alt="Enlarged view"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              />
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </ProtectedRoute>
   );
 }

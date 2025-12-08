@@ -38,6 +38,7 @@ export async function getUserRestaurantStates(
         personalRating: data.personalRating,
         notes: data.notes,
         zipCode: data.zipCode,
+        userUploadedPhotos: data.userUploadedPhotos,
         updatedAt: data.updatedAt,
       };
     });
@@ -88,6 +89,10 @@ export async function upsertUserRestaurantState(
 
   if (updates.zipCode !== undefined) {
     payload.zipCode = updates.zipCode;
+  }
+
+  if (updates.userUploadedPhotos !== undefined) {
+    payload.userUploadedPhotos = updates.userUploadedPhotos;
   }
 
   await setDoc(
