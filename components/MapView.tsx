@@ -287,7 +287,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
               latitude={item.restaurant.coordinates.lat}
               longitude={item.restaurant.coordinates.lng}
               anchor="bottom"
-              onClick={() => setSelectedRestaurant(item.restaurant)}
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                setSelectedRestaurant(item.restaurant);
+                mapRef.current?.flyTo({
+                  center: [item.restaurant.coordinates.lng, item.restaurant.coordinates.lat],
+                  duration: 800,
+                  zoom: 15,
+                  padding: { top: 250 } // Push content down to leave room for popup above
+                });
+              }}
             >
               <div
                 className="cursor-pointer transform hover:scale-110 transition-transform"
@@ -383,8 +392,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
                         <Star
                           key={star}
                           className={`w-3.5 h-3.5 ${(selectedRestaurant.rating?.average || 0) >= star
-                              ? 'text-yellow-400 fill-yellow-400'
-                              : 'text-gray-200'
+                            ? 'text-yellow-400 fill-yellow-400'
+                            : 'text-gray-200'
                             }`}
                         />
                       ))}
