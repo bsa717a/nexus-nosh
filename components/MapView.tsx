@@ -22,9 +22,9 @@ export interface MapViewHandle {
   focusRestaurant: (restaurantId: string) => void;
 }
 
-const MapView = forwardRef<MapViewHandle, MapViewProps>(({ 
-  recommendations = [], 
-  restaurants = [], 
+const MapView = forwardRef<MapViewHandle, MapViewProps>(({
+  recommendations = [],
+  restaurants = [],
   center,
   userLocation,
   myListIds = new Set(),
@@ -83,7 +83,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
     const map = mapRef.current.getMap();
     const bounds = map.getBounds();
     const mapCenter = map.getCenter();
-    
+
     // Check if bounds is available
     if (!bounds) {
       return;
@@ -117,9 +117,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
       if (style && style.layers) {
         style.layers.forEach((layer: any) => {
           // Hide POI labels and icons
-          if (layer.id.includes('poi-label') || 
-              layer.id.includes('poi') || 
-              layer.id.includes('place-label')) {
+          if (layer.id.includes('poi-label') ||
+            layer.id.includes('poi') ||
+            layer.id.includes('place-label')) {
             map.setLayoutProperty(layer.id, 'visibility', 'none');
           }
         });
@@ -154,7 +154,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
   useImperativeHandle(ref, () => ({
     focusRestaurant: (restaurantId: string) => {
       const item = displayItems.find(i => i.restaurant.id === restaurantId);
-      
+
       if (item && mapRef.current) {
         // Fly to the restaurant location
         mapRef.current.flyTo({
@@ -256,7 +256,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
         onZoomEnd={handleMapMove}
       >
         <NavigationControl position="top-left" />
-        
+
         {/* Show message overlay if no restaurants match filters */}
         {displayItems.length === 0 && (
           <div style={{
@@ -278,7 +278,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
             </div>
           </div>
         )}
-        
+
         {displayItems.map((item) => {
           const markerType = getMarkerType(item.restaurant);
           return (
@@ -328,69 +328,97 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(({
             closeButton={true}
             closeOnClick={false}
             className="mapbox-popup"
+            maxWidth="300px"
           >
-            <div className="p-2 min-w-[200px]">
-              <div className="flex items-start justify-between mb-1">
-                <h3 className="font-semibold text-gray-800 flex-1">
-                  {selectedRestaurant.name}
-                </h3>
-                <div className="ml-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <AddToListButton restaurantId={selectedRestaurant.id} restaurant={selectedRestaurant} size="sm" />
+            <div className="flex flex-col">
+              {/* Header Image or Gradient Bar (Optional, simpler to just use padding) */}
+              <div className="p-4 pb-3">
+                <div className="flex items-start justify-between gap-3 mr-6"> {/* mr-6 for Close Button space */}
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900 leading-tight">
+                      {selectedRestaurant.name}
+                    </h3>
+                  </div>
+                  <div className="flex-shrink-0 pt-1">
+                    <AddToListButton restaurantId={selectedRestaurant.id} restaurant={selectedRestaurant} size="sm" />
+                  </div>
+                </div>
+
+                <div className="flex items-start mt-1 text-gray-500 text-sm">
+                  <MapPin className="w-3.5 h-3.5 mt-0.5 mr-1 flex-shrink-0 text-gray-400" />
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedRestaurant.address)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-orange-600 hover:underline line-clamp-2 leading-snug"
+                  >
+                    {selectedRestaurant.address}
+                  </a>
                 </div>
               </div>
-              {selectedRestaurant.rating?.average !== undefined && selectedRestaurant.rating.average > 0 && (
-                <div className="flex items-center gap-1 text-yellow-500 mb-2">
-                  <Star className="w-4 h-4 fill-yellow-500" />
-                  <span className="text-sm font-medium">
-                    {selectedRestaurant.rating.average.toFixed(1)}
-                  </span>
-                  {selectedRestaurant.rating.count !== undefined && selectedRestaurant.rating.count > 0 && (
-                    <span className="text-xs text-gray-500">
-                      ({selectedRestaurant.rating.count})
+
+              {/* Tags & Meta */}
+              <div className="px-4 pb-3 space-y-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedRestaurant.cuisineType && Array.isArray(selectedRestaurant.cuisineType) && selectedRestaurant.cuisineType.slice(0, 3).map((cuisine) => (
+                    <span
+                      key={cuisine}
+                      className="px-2.5 py-1 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100/50 text-orange-700 text-[11px] font-semibold rounded-full shadow-sm"
+                    >
+                      {cuisine}
+                    </span>
+                  ))}
+                  {selectedRestaurant.priceRange && (
+                    <span className="px-2.5 py-1 bg-gray-50 border border-gray-100 text-gray-600 text-[11px] font-medium rounded-full flex items-center gap-0.5">
+                      <span className="text-gray-400">$</span>
+                      {Array(selectedRestaurant.priceRange.max).fill('$').join('').slice(0, 3)}
                     </span>
                   )}
                 </div>
-              )}
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedRestaurant.address)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-orange-600 hover:text-orange-700 hover:underline mb-2 block"
-              >
-                {selectedRestaurant.address}
-              </a>
-              <div className="flex flex-wrap gap-1 mb-2">
-                {selectedRestaurant.cuisineType && Array.isArray(selectedRestaurant.cuisineType) && selectedRestaurant.cuisineType.slice(0, 2).map((cuisine) => (
-                  <span
-                    key={cuisine}
-                    className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full"
-                  >
-                    {cuisine}
-                  </span>
-                ))}
+
+                {selectedRestaurant.rating?.average !== undefined && selectedRestaurant.rating.average > 0 && (
+                  <div className="flex items-center gap-1.5 p-2 bg-yellow-50/50 rounded-lg border border-yellow-100/50">
+                    <div className="flex items-center">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`w-3.5 h-3.5 ${(selectedRestaurant.rating?.average || 0) >= star
+                              ? 'text-yellow-400 fill-yellow-400'
+                              : 'text-gray-200'
+                            }`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs font-bold text-gray-700 pt-0.5">
+                      {selectedRestaurant.rating.average.toFixed(1)}
+                    </span>
+                    <span className="text-xs text-gray-400 pt-0.5">
+                      ({selectedRestaurant.rating.count || 0})
+                    </span>
+                  </div>
+                )}
               </div>
-              {selectedRestaurant.priceRange && (
-                <div className="text-xs text-gray-500">
-                  ${selectedRestaurant.priceRange.min} - ${selectedRestaurant.priceRange.max}
-                </div>
-              )}
-              
-              <button 
-                onClick={(e) => {
-                   e.stopPropagation();
-                   if (onRestaurantInfoClick) {
-                     onRestaurantInfoClick(selectedRestaurant);
-                   }
-                }}
-                className="w-full mt-2 bg-orange-50 text-orange-600 text-xs font-medium py-1.5 rounded hover:bg-orange-100 transition-colors"
-              >
-                More Info & Menu
-              </button>
+
+              {/* Action Footer */}
+              <div className="p-4 pt-0">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onRestaurantInfoClick) {
+                      onRestaurantInfoClick(selectedRestaurant);
+                    }
+                  }}
+                  className="w-full group relative flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white text-sm font-semibold py-2.5 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98]"
+                >
+                  More Info
+                  <Navigation className="w-3.5 h-3.5 opacity-80 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              </div>
             </div>
           </Popup>
         )}
       </Map>
-      
+
       {/* Legend for marker icons */}
       <div style={{
         position: 'absolute',

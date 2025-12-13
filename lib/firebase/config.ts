@@ -9,7 +9,8 @@ const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyBwDU2LlhEXIzB5iw4zhq_uepf2K4skPSc',
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'nexus-nosh.firebaseapp.com',
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'nexus-nosh',
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'nexus-nosh.firebasestorage.app',
+  // Hardcoded to correct bucket to override potential incorrect env var
+  storageBucket: 'nexus-nosh.appspot.com',
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '251223233015',
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:251223233015:web:26460b83dd6a21f5ce1ef2',
 };
@@ -28,8 +29,8 @@ if (typeof window !== 'undefined') {
 
 // Check if Firebase is properly configured
 // With fallback values, this should always be true in production
-const isFirebaseConfigured = 
-  firebaseConfig.apiKey && 
+const isFirebaseConfigured =
+  firebaseConfig.apiKey &&
   firebaseConfig.apiKey !== 'placeholder_api_key' &&
   firebaseConfig.apiKey.length > 10 &&
   firebaseConfig.projectId &&
@@ -86,11 +87,13 @@ function initializeFirebase() {
       app = getApps()[0];
       console.log('[Firebase] ✓ Using existing app');
     }
-    
+
     console.log('[Firebase] Getting Firestore, Auth, and Storage...');
     db = getFirestore(app);
     auth = getAuth(app);
     storage = getStorage(app);
+
+    console.log('[Firebase] Storage initialized with bucket:', storage.app.options.storageBucket);
 
     console.log('[Firebase] ✓ Services initialized:', {
       hasDb: !!db,
@@ -138,7 +141,7 @@ export function getFirebaseAuth(): Auth {
   if (typeof window === 'undefined') {
     throw new Error('Firebase Auth can only be used in the browser');
   }
-  
+
   // Try to initialize
   try {
     initializeFirebase();
@@ -146,7 +149,7 @@ export function getFirebaseAuth(): Auth {
     console.error('[getFirebaseAuth] Initialization error:', error);
     throw new Error(`Firebase initialization failed: ${(error as Error).message}`);
   }
-  
+
   if (!auth) {
     // Log detailed diagnostics
     console.error('[getFirebaseAuth] Auth is undefined after initialization attempt', {
