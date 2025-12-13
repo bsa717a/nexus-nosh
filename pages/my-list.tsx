@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import BottomNav from '@/components/BottomNav';
 import { useAuth } from '@/lib/auth/useAuth';
-import { Restaurant, UserRestaurantState } from '@/lib/types';
+import { Restaurant, UserRestaurantState, JournalEntry } from '@/lib/types';
 import {
   getUserListRestaurants,
   removeRestaurantFromList,
@@ -15,7 +15,7 @@ import {
 } from '@/lib/services/restaurants/userRestaurantStateService';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Heart, MapPin, Star, DollarSign, Clock, List, Grid, Trash2, Loader2, Camera, Plus, X } from 'lucide-react';
+import { Heart, MapPin, Star, DollarSign, Clock, List, Grid, Trash2, Loader2, Camera, Plus, X, Calendar, Edit3, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AddToListButton from '@/components/AddToListButton';
 import { storage } from '@/lib/firebase/config';
@@ -37,6 +37,10 @@ function MyListPageContent() {
   const [uploadingStates, setUploadingStates] = useState<Record<string, boolean>>({});
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  // Journal state
+  const [editingJournalEntry, setEditingJournalEntry] = useState<Record<string, Partial<JournalEntry> | null>>({});
+  const [journalUploadStates, setJournalUploadStates] = useState<Record<string, boolean>>({});
+
   const noteSaveTimeouts = useRef<Record<string, NodeJS.Timeout>>({});
 
   useEffect(() => {
@@ -295,17 +299,144 @@ function MyListPageContent() {
     persistStateChanges(restaurantId, { userUploadedPhotos: newPhotos });
   };
 
+  // Journal Functions
+  const handleStartJournalEntry = (restaurantId: string) => {
+    setEditingJournalEntry(prev => ({
+      ...prev,
+      [restaurantId]: {
+        date: new Date(),
+        notes: '',
+        photos: [],
+        rating: getState(restaurantId).personalRating || 0
+      }
+    }));
+  };
+
+  const handleCancelJournalEntry = (restaurantId: string) => {
+    setEditingJournalEntry(prev => {
+      const next = { ...prev };
+      delete next[restaurantId];
+      return next;
+    });
+  };
+
+  const handleSaveJournalEntry = async (restaurantId: string) => {
+    const draft = editingJournalEntry[restaurantId];
+    if (!draft || !user) return;
+
+    const entries = getState(restaurantId).journalEntries || [];
+
+    const newEntry: JournalEntry = {
+      id: crypto.randomUUID(),
+      date: draft.date || new Date(),
+      notes: draft.notes || '',
+      photos: draft.photos || [],
+      rating: draft.rating,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const newEntries = [newEntry, ...entries];
+
+    await persistStateChanges(restaurantId, { journalEntries: newEntries });
+
+    // Also update global rating if this is the newest rating
+    if (draft.rating && (!getState(restaurantId).personalRating || newEntries.length === 1)) {
+      await persistStateChanges(restaurantId, { personalRating: draft.rating });
+    }
+
+    handleCancelJournalEntry(restaurantId);
+  };
+
+  const handleDeleteJournalEntry = async (restaurantId: string, entryId: string) => {
+    if (!confirm('Are you sure you want to delete this journal entry?')) return;
+
+    const entries = getState(restaurantId).journalEntries || [];
+    const newEntries = entries.filter(e => e.id !== entryId);
+    await persistStateChanges(restaurantId, { journalEntries: newEntries });
+  };
+
+  const handleJournalImageUpload = async (restaurantId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setJournalUploadStates(prev => ({ ...prev, [restaurantId]: true }));
+
+    try {
+      const resizeImage = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let width = img.width;
+              let height = img.height;
+              const MAX_WIDTH = 800;
+              const MAX_HEIGHT = 800;
+              if (width > height) {
+                if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+              } else {
+                if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) { reject(new Error('Canvas context failed')); return; }
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.onerror = () => reject(new Error('Failed to load image'));
+            img.src = e.target?.result as string;
+          };
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const base64 = await resizeImage(file);
+      if (base64.length > 700000) throw new Error("Image too large");
+
+      setEditingJournalEntry(prev => {
+        const current = prev[restaurantId] || {};
+        return {
+          ...prev,
+          [restaurantId]: {
+            ...current,
+            photos: [base64, ...(current.photos || [])]
+          }
+        };
+      });
+    } catch (err) {
+      console.error("Journal upload error", err);
+      alert("Failed to attach image");
+    } finally {
+      setJournalUploadStates(prev => ({ ...prev, [restaurantId]: false }));
+    }
+  };
+
+  // Helper to safely convert Firestore timestamps or strings to Date
+  const safeDate = (date: any): Date => {
+    if (!date) return new Date();
+    if (date instanceof Date) return date;
+    // Check for Firestore Timestamp-like object (seconds/nanoseconds) or method
+    if (typeof date.toDate === 'function') return date.toDate();
+    if (date.seconds !== undefined) return new Date(date.seconds * 1000);
+    return new Date(date);
+  };
+
   function renderDetails(restaurant: Restaurant) {
     const state = getState(restaurant.id);
     const saving = savingStates[restaurant.id];
-    const currentDraftNotes = draftNotes[restaurant.id];
     const effectiveRating = state.personalRating;
+    const isEditing = !!editingJournalEntry[restaurant.id];
+    const currentDraft = editingJournalEntry[restaurant.id];
 
     return (
-      <div className="mt-1 space-y-4 rounded-xl bg-orange-50/60 p-4 border border-orange-100">
-        <div className="flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-12 text-sm text-gray-700">
+      <div className="mt-1 space-y-6 rounded-xl bg-orange-50/60 p-5 border border-orange-100">
+        {/* Top Controls: Want to Go / Has Been / Global Rating */}
+        <div className="flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-12 text-sm text-gray-700 pb-4 border-b border-orange-200/50">
           <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2 cursor-pointer group">
               <input
                 type="checkbox"
                 checked={state.wantToGo}
@@ -314,9 +445,9 @@ function MyListPageContent() {
                 }
                 className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer"
               />
-              <span>I want to go</span>
+              <span className="group-hover:text-orange-700 transition-colors">I want to go</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2 cursor-pointer group">
               <input
                 type="checkbox"
                 checked={state.hasBeen}
@@ -325,12 +456,12 @@ function MyListPageContent() {
                 }
                 className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer"
               />
-              <span>I have been there</span>
+              <span className="group-hover:text-orange-700 transition-colors">I have been there</span>
             </label>
           </div>
 
           <div className="flex items-center gap-4">
-            <label className="font-medium text-gray-800">My personal rating</label>
+            <label className="font-medium text-gray-800">Global Rating</label>
             <div className="flex items-center gap-1">
               {[1, 2, 3, 4, 5].map((value) => (
                 <button
@@ -342,105 +473,230 @@ function MyListPageContent() {
                     : 'text-gray-300 hover:text-yellow-400'
                     }`}
                 >
-                  <Star className="w-6 h-6 fill-current" />
+                  <Star className="w-5 h-5 fill-current" />
                 </button>
               ))}
-              {effectiveRating ? (
-                <span className="text-sm text-gray-600 ml-2 font-medium">{effectiveRating.toFixed(1)}</span>
-              ) : (
-                <span className="text-xs text-gray-500 ml-2">Click to rate</span>
-              )}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col text-sm text-gray-700">
-          <label className="font-medium text-gray-800 mb-1">Personal notes & Photos</label>
-          <div className="flex gap-4 items-start">
-            <textarea
-              value={currentDraftNotes ?? state.notes ?? ''}
-              onChange={(event) => {
-                const value = event.target.value;
-                setDraftNotes((prev) => ({ ...prev, [restaurant.id]: value }));
-                updateLocalState(restaurant.id, { notes: value });
-
-                if (noteSaveTimeouts.current[restaurant.id]) {
-                  clearTimeout(noteSaveTimeouts.current[restaurant.id]);
-                }
-
-                noteSaveTimeouts.current[restaurant.id] = setTimeout(() => {
-                  persistStateChanges(restaurant.id, { notes: value });
-                  delete noteSaveTimeouts.current[restaurant.id];
-                }, 800);
-              }}
-              onBlur={() => {
-                const noteValue = draftNotes[restaurant.id] ?? state.notes ?? '';
-                if (noteSaveTimeouts.current[restaurant.id]) {
-                  clearTimeout(noteSaveTimeouts.current[restaurant.id]);
-                  delete noteSaveTimeouts.current[restaurant.id];
-                }
-                persistStateChanges(restaurant.id, { notes: noteValue });
-              }}
-              rows={3}
-              placeholder="Add your thoughts, meal ideas, or who you'd like to bring."
-              className="flex-1 w-full rounded-lg border border-orange-200 px-3 py-2 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-orange-500 text-white placeholder:text-orange-100 min-h-[96px]"
-            />
-
-            <div className="flex-shrink-0">
-              <input
-                type="file"
-                id={`upload-${restaurant.id}`}
-                className="hidden"
-                accept="image/*"
-                onChange={(e) => handleImageUpload(restaurant.id, e)}
-                disabled={uploadingStates[restaurant.id]}
-              />
-
-              {state.userUploadedPhotos && state.userUploadedPhotos.length > 0 ? (
-                <div
-                  className="relative w-24 h-[96px] group cursor-pointer"
-                  onClick={() => state.userUploadedPhotos?.[0] && setSelectedImage(state.userUploadedPhotos[0])}
-                >
-                  <img
-                    src={state.userUploadedPhotos[0]}
-                    alt="Personal note"
-                    className="w-full h-full object-cover rounded-lg border border-orange-200 transition-transform hover:scale-105"
-                  />
-                  <button
-                    onClick={() => handleRemoveImage(restaurant.id, state.userUploadedPhotos![0])}
-                    className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-50"
-                  >
-                    <X className="w-3 h-3 text-red-500" />
-                  </button>
-                  {state.userUploadedPhotos.length > 1 && (
-                    <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-                      +{state.userUploadedPhotos.length - 1}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <label
-                  htmlFor={`upload-${restaurant.id}`}
-                  className={`flex flex-col items-center justify-center w-24 h-[96px] border-2 border-dashed border-orange-200 rounded-lg cursor-pointer hover:bg-orange-50 hover:border-orange-300 transition-colors bg-white/50 ${uploadingStates[restaurant.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {uploadingStates[restaurant.id] ? (
-                    <Loader2 className="w-6 h-6 text-orange-400 animate-spin" />
-                  ) : (
-                    <>
-                      <Camera className="w-6 h-6 text-orange-400 mb-1" />
-                      <span className="text-[10px] text-orange-400 font-medium whitespace-nowrap">Add Photo</span>
-                    </>
-                  )}
-                </label>
-              )}
-            </div>
+        {/* Journal Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <span className="p-1.5 bg-orange-100 rounded-lg text-orange-600">
+                <Edit3 className="w-4 h-4" />
+              </span>
+              My Journal
+            </h3>
+            {!isEditing && (
+              <Button
+                onClick={() => handleStartJournalEntry(restaurant.id)}
+                size="sm"
+                className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Entry
+              </Button>
+            )}
           </div>
-          {uploadErrors[restaurant.id] && (
-            <p className="text-xs text-red-500 mt-1 max-w-[200px]">{uploadErrors[restaurant.id]}</p>
+
+          {/* New Entry Form */}
+          <AnimatePresence>
+            {isEditing && currentDraft && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-white rounded-xl border border-orange-200 p-4 shadow-sm mb-6">
+                  <div className="flex justify-between items-start mb-4">
+                    <h4 className="font-semibold text-gray-800">New Visit Entry</h4>
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={safeDate(currentDraft.date).toISOString().split('T')[0]}
+                        onChange={(e) => setEditingJournalEntry(prev => ({
+                          ...prev,
+                          [restaurant.id]: { ...(prev[restaurant.id] || {}), date: new Date(e.target.value) }
+                        }))}
+                        className="px-2 py-1 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Rating</label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          onClick={() => setEditingJournalEntry(prev => ({
+                            ...prev,
+                            [restaurant.id]: { ...(prev[restaurant.id] || {}), rating: star }
+                          }))}
+                          className={`p-1 ${(currentDraft.rating || 0) >= star ? 'text-yellow-400' : 'text-gray-200 hover:text-yellow-200'}`}
+                        >
+                          <Star className={`w-6 h-6 ${(currentDraft.rating || 0) >= star ? 'fill-current' : ''}`} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Notes</label>
+                    <textarea
+                      value={currentDraft.notes || ''}
+                      onChange={(e) => setEditingJournalEntry(prev => ({
+                        ...prev,
+                        [restaurant.id]: { ...(prev[restaurant.id] || {}), notes: e.target.value }
+                      }))}
+                      placeholder="What did you order? How was the service?"
+                      className="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none min-h-[100px]"
+                    />
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Photos</label>
+                    <div className="flex flex-wrap gap-2">
+                      {currentDraft.photos?.map((photo, idx) => (
+                        <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden group border border-gray-200">
+                          <img src={photo} alt="Draft" className="w-full h-full object-cover" />
+                          <button
+                            onClick={() => setEditingJournalEntry(prev => {
+                              const current = prev[restaurant.id];
+                              if (!current) return prev;
+                              return {
+                                ...prev,
+                                [restaurant.id]: {
+                                  ...current,
+                                  photos: current.photos?.filter((_, i) => i !== idx)
+                                }
+                              };
+                            })}
+                            className="absolute top-1 right-1 p-1 bg-white rounded-full shadow-md text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      <label className={`flex flex-col items-center justify-center w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors ${journalUploadStates[restaurant.id] ? 'opacity-50 pointer-events-none' : ''}`}>
+                        {journalUploadStates[restaurant.id] ? <Loader2 className="w-5 h-5 animate-spin text-orange-500" /> : <Camera className="w-5 h-5 text-gray-400" />}
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleJournalImageUpload(restaurant.id, e)} />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+                    <Button variant="outline" onClick={() => handleCancelJournalEntry(restaurant.id)} className="text-gray-600">Cancel</Button>
+                    <Button onClick={() => handleSaveJournalEntry(restaurant.id)} className="bg-orange-600 text-white hover:bg-orange-700">Save Entry</Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Journal Entries List */}
+          <div className="space-y-3">
+            {state.journalEntries && state.journalEntries.length > 0 ? (
+              state.journalEntries.map((entry) => (
+                <div key={entry.id} className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm hover:shadow-md transition-all group">
+                  <div className="flex gap-4 items-start">
+                    {/* Left: Date */}
+                    <div className="flex-shrink-0 p-2 bg-orange-50 rounded-lg text-orange-600 font-bold text-center w-[52px] leading-tight">
+                      <span className="block text-[10px] uppercase text-orange-400">
+                        {safeDate(entry.date).toLocaleString('default', { month: 'short' })}
+                      </span>
+                      <span className="text-lg">
+                        {safeDate(entry.date).getDate()}
+                      </span>
+                    </div>
+
+                    {/* Middle: Content */}
+                    <div className="flex-1 min-w-0 py-0.5">
+                      {/* Header: Rating (Right aligned) */}
+                      {entry.rating && (
+                        <div className="flex justify-end mb-1">
+                          <div className="flex text-yellow-400 gap-0.5">
+                            {[...Array(5)].map((_, i) => (
+                              <Star key={i} className={`w-3.5 h-3.5 ${i < entry.rating! ? 'fill-current' : 'text-gray-200'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Main Content Row: Notes (Left) | Photos (Right) */}
+                      <div className="flex gap-3 items-start">
+                        {/* Notes */}
+                        <div className="flex-1 min-w-0">
+                          {entry.notes ? (
+                            <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                              {entry.notes}
+                            </p>
+                          ) : (
+                            <span className="text-gray-400 text-sm italic">No notes</span>
+                          )}
+                        </div>
+
+                        {/* Photos */}
+                        {entry.photos && entry.photos.length > 0 && (
+                          <div className="flex-shrink-0 flex flex-wrap gap-2 max-w-[120px] justify-end">
+                            {entry.photos.map((photo, idx) => (
+                              <div key={idx} className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-100 cursor-pointer hover:opacity-90 active:scale-95 transition-all" onClick={() => setSelectedImage(photo)}>
+                                <img src={photo} alt={`Journal ${idx}`} className="w-full h-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Right: Actions */}
+                    <div className="flex-shrink-0 pt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleDeleteJournalEntry(restaurant.id, entry.id)}
+                        className="text-gray-300 hover:text-red-500 p-1.5 rounded-full hover:bg-red-50 transition-colors"
+                        title="Delete Entry"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-gray-400">
+                  <Edit3 className="w-6 h-6" />
+                </div>
+                <p className="text-gray-500 font-medium">No journal entries yet</p>
+                <p className="text-gray-400 text-sm">Record your first visit experience!</p>
+              </div>
+            )}
+          </div>
+
+          {/* Legacy Notes Section (Only if exists and not converted) */}
+          {(state.notes || (state.userUploadedPhotos && state.userUploadedPhotos.length > 0)) && (
+            <div className="mt-8 pt-6 border-t border-orange-200/50">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Clock className="w-3 h-3" />
+                Historical Notes
+              </h4>
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 opacity-75 hover:opacity-100 transition-opacity">
+                {state.notes && <p className="text-sm text-gray-600 italic mb-3">"{state.notes}"</p>}
+                {state.userUploadedPhotos && state.userUploadedPhotos.length > 0 && (
+                  <div className="flex gap-2">
+                    {state.userUploadedPhotos.map((photo, idx) => (
+                      <img key={idx} src={photo} alt="Legacy" className="w-16 h-16 object-cover rounded-lg border border-gray-200" onClick={() => setSelectedImage(photo)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
-        {saving && <p className="text-xs text-orange-500">Saving…</p>}
+        {saving && <p className="text-xs text-orange-500 text-right">Saving changes…</p>}
       </div>
     );
   }

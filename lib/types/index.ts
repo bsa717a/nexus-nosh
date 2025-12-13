@@ -43,12 +43,24 @@ export interface UserRestaurantState {
   personalRating?: number; // 1-5
   notes?: string;
   zipCode?: string;
-  
+
   // Optional user-contributed data to enrich restaurant info
   userProvidedPhone?: string;
   userProvidedHours?: string;
-  userUploadedPhotos?: string[]; // URLs to user-uploaded images
-  
+  userUploadedPhotos?: string[]; // URLs to user-uploaded images (Legacy: moving to journalEntries)
+
+  journalEntries?: JournalEntry[];
+
+  updatedAt: Date;
+}
+
+export interface JournalEntry {
+  id: string;
+  date: Date;
+  notes: string;
+  photos: string[]; // URLs
+  rating?: number;
+  createdAt: Date;
   updatedAt: Date;
 }
 
@@ -84,7 +96,7 @@ export interface Restaurant {
     lng: number;
   };
   cuisineType: string[];
-  
+
   // Optional fields - may come from Mapbox, user input, or community data
   priceRange?: {
     min: number;
@@ -106,7 +118,7 @@ export interface Restaurant {
   website?: string;
   phone?: string;
   createdAt?: Date;
-  
+
   // Source tracking
   source?: 'mapbox' | 'database' | 'user-created';
 
@@ -164,7 +176,7 @@ export interface OverlapScore {
 }
 
 // Meeting Types
-export type MeetingType = 
+export type MeetingType =
   | 'casual-checkin'
   | 'investor-lunch'
   | 'team-meeting'

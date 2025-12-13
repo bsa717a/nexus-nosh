@@ -39,6 +39,7 @@ export async function getUserRestaurantStates(
         notes: data.notes,
         zipCode: data.zipCode,
         userUploadedPhotos: data.userUploadedPhotos,
+        journalEntries: data.journalEntries || [],
         updatedAt: data.updatedAt,
       };
     });
@@ -93,6 +94,10 @@ export async function upsertUserRestaurantState(
 
   if (updates.userUploadedPhotos !== undefined) {
     payload.userUploadedPhotos = updates.userUploadedPhotos;
+  }
+
+  if (updates.journalEntries !== undefined) {
+    payload.journalEntries = updates.journalEntries;
   }
 
   await setDoc(
