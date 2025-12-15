@@ -501,7 +501,7 @@ function MyListPageContent() {
             )}
           </div>
 
-          {/* New Entry Form */}
+          {/* New Entry Form - Compact Layout */}
           <AnimatePresence>
             {isEditing && currentDraft && (
               <motion.div
@@ -510,10 +510,18 @@ function MyListPageContent() {
                 exit={{ opacity: 0, height: 0 }}
                 className="overflow-hidden"
               >
-                <div className="bg-white rounded-xl border border-orange-200 p-4 shadow-sm mb-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <h4 className="font-semibold text-gray-800">New Visit Entry</h4>
-                    <div className="flex gap-2">
+                <div className="bg-white rounded-xl border border-orange-300 p-3 shadow-sm mb-4 ring-1 ring-orange-100">
+                  <div className="flex gap-4 items-start">
+                    {/* Left: Date Picker (Styled as date square) */}
+                    <div className="relative flex-shrink-0 group cursor-pointer">
+                      <div className="p-2 bg-orange-50 group-hover:bg-orange-100 transition-colors rounded-lg text-orange-600 font-bold text-center w-[52px] leading-tight border border-transparent group-hover:border-orange-200">
+                        <span className="block text-[10px] uppercase text-orange-400">
+                          {safeDate(currentDraft.date).toLocaleString('default', { month: 'short' })}
+                        </span>
+                        <span className="text-lg">
+                          {safeDate(currentDraft.date).getDate()}
+                        </span>
+                      </div>
                       <input
                         type="date"
                         value={safeDate(currentDraft.date).toISOString().split('T')[0]}
@@ -521,76 +529,89 @@ function MyListPageContent() {
                           ...prev,
                           [restaurant.id]: { ...(prev[restaurant.id] || {}), date: new Date(e.target.value) }
                         }))}
-                        className="px-2 py-1 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-orange-500"
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        title="Change Date"
                       />
                     </div>
-                  </div>
 
-                  <div className="mb-4">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Rating</label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          onClick={() => setEditingJournalEntry(prev => ({
-                            ...prev,
-                            [restaurant.id]: { ...(prev[restaurant.id] || {}), rating: star }
-                          }))}
-                          className={`p-1 ${(currentDraft.rating || 0) >= star ? 'text-yellow-400' : 'text-gray-200 hover:text-yellow-200'}`}
-                        >
-                          <Star className={`w-6 h-6 ${(currentDraft.rating || 0) >= star ? 'fill-current' : ''}`} />
-                        </button>
-                      ))}
+                    {/* Middle: Notes Input */}
+                    <div className="flex-1 min-w-0">
+                      <textarea
+                        value={currentDraft.notes || ''}
+                        onChange={(e) => setEditingJournalEntry(prev => ({
+                          ...prev,
+                          [restaurant.id]: { ...(prev[restaurant.id] || {}), notes: e.target.value }
+                        }))}
+                        placeholder="Write your notes here..."
+                        className="w-full text-sm text-gray-700 placeholder:text-gray-400 border-0 p-0 focus:ring-0 resize-none bg-transparent leading-relaxed h-[88px]"
+                        autoFocus
+                      />
                     </div>
-                  </div>
 
-                  <div className="mb-4">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Notes</label>
-                    <textarea
-                      value={currentDraft.notes || ''}
-                      onChange={(e) => setEditingJournalEntry(prev => ({
-                        ...prev,
-                        [restaurant.id]: { ...(prev[restaurant.id] || {}), notes: e.target.value }
-                      }))}
-                      placeholder="What did you order? How was the service?"
-                      className="w-full p-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none min-h-[100px]"
-                    />
-                  </div>
-
-                  <div className="mb-4">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Photos</label>
-                    <div className="flex flex-wrap gap-2">
-                      {currentDraft.photos?.map((photo, idx) => (
-                        <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden group border border-gray-200">
-                          <img src={photo} alt="Draft" className="w-full h-full object-cover" />
+                    {/* Right: Rating & Photos */}
+                    <div className="flex-shrink-0 flex flex-col items-end gap-3 w-[140px]">
+                      {/* Rating Input */}
+                      <div className="flex text-gray-200 gap-0.5">
+                        {[1, 2, 3, 4, 5].map((star) => (
                           <button
-                            onClick={() => setEditingJournalEntry(prev => {
-                              const current = prev[restaurant.id];
-                              if (!current) return prev;
-                              return {
-                                ...prev,
-                                [restaurant.id]: {
-                                  ...current,
-                                  photos: current.photos?.filter((_, i) => i !== idx)
-                                }
-                              };
-                            })}
-                            className="absolute top-1 right-1 p-1 bg-white rounded-full shadow-md text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            key={star}
+                            onClick={() => setEditingJournalEntry(prev => ({
+                              ...prev,
+                              [restaurant.id]: { ...(prev[restaurant.id] || {}), rating: star }
+                            }))}
+                            className={`focus:outline-none transition-transform active:scale-90 ${(currentDraft.rating || 0) >= star ? 'text-yellow-400' : 'hover:text-yellow-200'
+                              }`}
                           >
-                            <X className="w-3 h-3" />
+                            <Star className={`w-3.5 h-3.5 ${(currentDraft.rating || 0) >= star ? 'fill-current' : ''}`} />
                           </button>
-                        </div>
-                      ))}
-                      <label className={`flex flex-col items-center justify-center w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors ${journalUploadStates[restaurant.id] ? 'opacity-50 pointer-events-none' : ''}`}>
-                        {journalUploadStates[restaurant.id] ? <Loader2 className="w-5 h-5 animate-spin text-orange-500" /> : <Camera className="w-5 h-5 text-gray-400" />}
-                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleJournalImageUpload(restaurant.id, e)} />
-                      </label>
+                        ))}
+                      </div>
+
+                      {/* Photos Input */}
+                      <div className="flex flex-wrap gap-1.5 justify-end">
+                        {currentDraft.photos?.map((photo, idx) => (
+                          <div key={idx} className="relative w-10 h-10 rounded-md overflow-hidden group border border-gray-100">
+                            <img src={photo} alt="Draft" className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => setEditingJournalEntry(prev => {
+                                const current = prev[restaurant.id];
+                                if (!current) return prev;
+                                return {
+                                  ...prev,
+                                  [restaurant.id]: {
+                                    ...current,
+                                    photos: current.photos?.filter((_, i) => i !== idx)
+                                  }
+                                };
+                              })}
+                              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                            >
+                              <X className="w-3 h-3 text-white" />
+                            </button>
+                          </div>
+                        ))}
+                        <label className={`flex items-center justify-center w-10 h-10 border border-dashed border-gray-300 rounded-md cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors ${journalUploadStates[restaurant.id] ? 'opacity-50 pointer-events-none' : ''}`}>
+                          {journalUploadStates[restaurant.id] ? <Loader2 className="w-4 h-4 animate-spin text-orange-500" /> : <Camera className="w-4 h-4 text-gray-400" />}
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => handleJournalImageUpload(restaurant.id, e)} />
+                        </label>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
-                    <Button variant="outline" onClick={() => handleCancelJournalEntry(restaurant.id)} className="text-gray-600">Cancel</Button>
-                    <Button onClick={() => handleSaveJournalEntry(restaurant.id)} className="bg-orange-600 text-white hover:bg-orange-700">Save Entry</Button>
+                  {/* Footer: Save/Cancel Actions */}
+                  <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100/50">
+                    <button
+                      onClick={() => handleCancelJournalEntry(restaurant.id)}
+                      className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleSaveJournalEntry(restaurant.id)}
+                      className="text-xs font-medium text-white bg-orange-500 hover:bg-orange-600 px-3 py-1 rounded-full shadow-sm transition-colors"
+                    >
+                      Save Entry
+                    </button>
                   </div>
                 </div>
               </motion.div>

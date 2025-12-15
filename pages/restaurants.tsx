@@ -3,11 +3,12 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { MapPin, Star, DollarSign, Clock, List, Grid, Navigation } from 'lucide-react';
+import { MapPin, Star, DollarSign, Clock, List, Grid, Navigation, Trash2, Loader2, Camera, Plus, X, Edit3 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import BottomNav from '@/components/BottomNav';
 import { getAllRestaurants } from '@/lib/services/restaurants/restaurantService';
 import { searchMapboxRestaurants, geocodeZipCode } from '@/lib/services/mapbox/mapboxSearchService';
-import { Restaurant, UserRestaurantState } from '@/lib/types';
+import { Restaurant, UserRestaurantState, JournalEntry } from '@/lib/types';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth/useAuth';
 import { getUserSettings, updateViewPreferences } from '@/lib/services/user-settings/userSettingsService';
@@ -35,6 +36,11 @@ function RestaurantsPageContent() {
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
   const [statusFilter, setStatusFilter] = useState<'all' | 'wantToGo' | 'hasBeen'>('all');
   const [zipFilter, setZipFilter] = useState('');
+
+  // Journal State
+  const [editingJournalEntry, setEditingJournalEntry] = useState<Record<string, Partial<JournalEntry> | null>>({});
+  const [journalUploadStates, setJournalUploadStates] = useState<Record<string, boolean>>({});
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const { user } = useAuth();
   const isAuthenticated = Boolean(user);
@@ -95,7 +101,7 @@ function RestaurantsPageContent() {
     const R = 6371; // Earth's radius in kilometers
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
+    const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
@@ -107,13 +113,13 @@ function RestaurantsPageContent() {
   const handleMapCenterChange = useCallback(async (newCenter: { lat: number; lng: number }) => {
     // Calculate distance from last fetched center
     const FETCH_THRESHOLD_KM = 2; // Fetch new data if moved more than 2km
-    
+
     if (lastFetchedCenter) {
       const distance = calculateDistance(
         lastFetchedCenter.lat, lastFetchedCenter.lng,
         newCenter.lat, newCenter.lng
       );
-      
+
       // Don't fetch if we haven't moved far enough
       if (distance < FETCH_THRESHOLD_KM) {
         return;
@@ -164,7 +170,7 @@ function RestaurantsPageContent() {
   // Combine database and Mapbox restaurants (similar to Dashboard)
   const combinedRestaurants = useMemo(() => {
     const restaurantMap = new Map<string, Restaurant>();
-    
+
     // First add database restaurants
     allRestaurants.forEach(restaurant => {
       if (restaurant?.name && restaurant?.coordinates?.lat && restaurant?.coordinates?.lng) {
@@ -172,13 +178,13 @@ function RestaurantsPageContent() {
         restaurantMap.set(key, { ...restaurant, source: 'database' as const });
       }
     });
-    
+
     // Then add/override with Mapbox restaurants (prefer fresh data)
     mapboxRestaurants.forEach(mapboxRest => {
       if (mapboxRest?.name && mapboxRest?.coordinates?.lat && mapboxRest?.coordinates?.lng) {
         const key = `${mapboxRest.name.toLowerCase()}-${mapboxRest.coordinates.lat.toFixed(4)}-${mapboxRest.coordinates.lng.toFixed(4)}`;
         const existing = restaurantMap.get(key);
-        
+
         if (existing) {
           // Merge: Keep Mapbox name/address/coords, but preserve DB enrichments
           restaurantMap.set(key, {
@@ -195,7 +201,7 @@ function RestaurantsPageContent() {
         }
       }
     });
-    
+
     return Array.from(restaurantMap.values());
   }, [allRestaurants, mapboxRestaurants]);
 
@@ -356,94 +362,422 @@ function RestaurantsPageContent() {
     persistStateChanges(restaurantId, { personalRating: rating });
   }
 
+  // Journal Functions
+  const handleStartJournalEntry = (restaurantId: string) => {
+    setEditingJournalEntry(prev => ({
+      ...prev,
+      [restaurantId]: {
+        date: new Date(),
+        notes: '',
+        photos: [],
+        rating: getState(restaurantId).personalRating || 0
+      }
+    }));
+  };
+
+  const handleCancelJournalEntry = (restaurantId: string) => {
+    setEditingJournalEntry(prev => {
+      const next = { ...prev };
+      delete next[restaurantId];
+      return next;
+    });
+  };
+
+  const handleSaveJournalEntry = async (restaurantId: string) => {
+    const draft = editingJournalEntry[restaurantId];
+    if (!draft || !user) return;
+
+    const entries = getState(restaurantId).journalEntries || [];
+
+    const newEntry: JournalEntry = {
+      id: crypto.randomUUID(),
+      date: draft.date || new Date(),
+      notes: draft.notes || '',
+      photos: draft.photos || [],
+      rating: draft.rating,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const newEntries = [newEntry, ...entries];
+
+    await persistStateChanges(restaurantId, { journalEntries: newEntries });
+
+    // Also update global rating if this is the newest rating
+    if (draft.rating && (!getState(restaurantId).personalRating || newEntries.length === 1)) {
+      await persistStateChanges(restaurantId, { personalRating: draft.rating });
+    }
+
+    handleCancelJournalEntry(restaurantId);
+  };
+
+  const handleDeleteJournalEntry = async (restaurantId: string, entryId: string) => {
+    if (!confirm('Are you sure you want to delete this journal entry?')) return;
+
+    const entries = getState(restaurantId).journalEntries || [];
+    const newEntries = entries.filter(e => e.id !== entryId);
+    await persistStateChanges(restaurantId, { journalEntries: newEntries });
+  };
+
+  const handleJournalImageUpload = async (restaurantId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setJournalUploadStates(prev => ({ ...prev, [restaurantId]: true }));
+
+    try {
+      const resizeImage = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let width = img.width;
+              let height = img.height;
+              const MAX_WIDTH = 800;
+              const MAX_HEIGHT = 800;
+              if (width > height) {
+                if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+              } else {
+                if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+              }
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) { reject(new Error('Canvas context failed')); return; }
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.onerror = () => reject(new Error('Failed to load image'));
+            img.src = e.target?.result as string;
+          };
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const base64 = await resizeImage(file);
+      if (base64.length > 700000) throw new Error("Image too large");
+
+      setEditingJournalEntry(prev => {
+        const current = prev[restaurantId] || {};
+        return {
+          ...prev,
+          [restaurantId]: {
+            ...current,
+            photos: [base64, ...(current.photos || [])]
+          }
+        };
+      });
+    } catch (err) {
+      console.error("Journal upload error", err);
+      alert("Failed to attach image");
+    } finally {
+      setJournalUploadStates(prev => ({ ...prev, [restaurantId]: false }));
+    }
+  };
+
+  // Helper to safely convert Firestore timestamps or strings to Date
+  const safeDate = (date: any): Date => {
+    if (!date) return new Date();
+    if (date instanceof Date) return date;
+    // Check for Firestore Timestamp-like object (seconds/nanoseconds) or method
+    if (typeof date.toDate === 'function') return date.toDate();
+    if (date.seconds !== undefined) return new Date(date.seconds * 1000);
+    return new Date(date);
+  };
+
   function renderDetails(restaurant: Restaurant) {
     const state = getState(restaurant.id);
     const saving = savingStates[restaurant.id];
-    const currentDraftNotes = draftNotes[restaurant.id];
     const effectiveRating = state.personalRating;
+    const isEditing = !!editingJournalEntry[restaurant.id];
+    const currentDraft = editingJournalEntry[restaurant.id];
 
     return (
-      <div className="mt-4 space-y-4 rounded-xl bg-orange-50/60 p-4 border border-orange-100">
-        <div className="flex flex-wrap gap-6 text-sm text-gray-700">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={state.wantToGo}
-              onChange={(event) =>
-                persistStateChanges(restaurant.id, { wantToGo: event.target.checked })
-              }
-              className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1"
-            />
-            <span>I want to go</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={state.hasBeen}
-              onChange={(event) =>
-                persistStateChanges(restaurant.id, { hasBeen: event.target.checked })
-              }
-              className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1"
-            />
-            <span>I have been there</span>
-          </label>
-        </div>
+      <div className="mt-4 space-y-6 rounded-xl bg-orange-50/60 p-5 border border-orange-100">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-12 text-sm text-gray-700 pb-4 border-b border-orange-200/50">
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={state.wantToGo}
+                onChange={(event) =>
+                  persistStateChanges(restaurant.id, { wantToGo: event.target.checked })
+                }
+                className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer"
+              />
+              <span className="group-hover:text-orange-700 transition-colors">I want to go</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={state.hasBeen}
+                onChange={(event) =>
+                  persistStateChanges(restaurant.id, { hasBeen: event.target.checked })
+                }
+                className="h-4 w-4 rounded border border-orange-300 bg-white text-orange-500 accent-orange-500 focus:ring-orange-500 focus:ring-offset-1 cursor-pointer"
+              />
+              <span className="group-hover:text-orange-700 transition-colors">I have been there</span>
+            </label>
+          </div>
 
-        <div className="flex flex-col md:flex-row md:items-center md:gap-4 text-sm text-gray-700">
-          <label className="md:w-60 font-medium text-gray-800">My personal rating</label>
-          <div className="flex items-center gap-2">
-            {[1, 2, 3, 4, 5].map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => handleRatingClick(restaurant.id, value)}
-                className={`transition ${
-                  (effectiveRating ?? 0) >= value
+          <div className="flex items-center gap-4">
+            <label className="font-medium text-gray-800">Global Rating</label>
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => handleRatingClick(restaurant.id, value)}
+                  className={`transition p-0.5 ${(effectiveRating ?? 0) >= value
                     ? 'text-yellow-500'
                     : 'text-gray-300 hover:text-yellow-400'
-                }`}
-              >
-                <Star className="w-6 h-6" />
-              </button>
-            ))}
-            {effectiveRating ? (
-              <span className="text-sm text-gray-600">{effectiveRating.toFixed(1)}</span>
-            ) : (
-              <span className="text-xs text-gray-500">Click to rate</span>
-            )}
+                    }`}
+                >
+                  <Star className="w-5 h-5 fill-current" />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col text-sm text-gray-700">
-          <label className="font-medium text-gray-800 mb-1">Personal notes</label>
-          <textarea
-            value={currentDraftNotes ?? state.notes ?? ''}
-            onChange={(event) => {
-              const value = event.target.value;
-              setDraftNotes((prev) => ({ ...prev, [restaurant.id]: value }));
-              updateLocalState(restaurant.id, { notes: value });
+        {/* Journal Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <span className="p-1.5 bg-orange-100 rounded-lg text-orange-600">
+                <Edit3 className="w-4 h-4" />
+              </span>
+              My Journal
+            </h3>
+            {!isEditing && (
+              <Button
+                onClick={() => handleStartJournalEntry(restaurant.id)}
+                size="sm"
+                className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Entry
+              </Button>
+            )}
+          </div>
 
-              if (noteSaveTimeouts.current[restaurant.id]) {
-                clearTimeout(noteSaveTimeouts.current[restaurant.id]);
-              }
+          {/* New Entry Form - Compact Layout */}
+          <AnimatePresence>
+            {isEditing && currentDraft && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-white rounded-xl border border-orange-300 p-3 shadow-sm mb-4 ring-1 ring-orange-100">
+                  <div className="flex gap-4 items-start">
+                    {/* Left: Date Picker (Styled as date square) */}
+                    <div className="relative flex-shrink-0 group cursor-pointer">
+                      <div className="p-2 bg-orange-50 group-hover:bg-orange-100 transition-colors rounded-lg text-orange-600 font-bold text-center w-[52px] leading-tight border border-transparent group-hover:border-orange-200">
+                        <span className="block text-[10px] uppercase text-orange-400">
+                          {safeDate(currentDraft.date).toLocaleString('default', { month: 'short' })}
+                        </span>
+                        <span className="text-lg">
+                          {safeDate(currentDraft.date).getDate()}
+                        </span>
+                      </div>
+                      <input
+                        type="date"
+                        value={safeDate(currentDraft.date).toISOString().split('T')[0]}
+                        onChange={(e) => setEditingJournalEntry(prev => ({
+                          ...prev,
+                          [restaurant.id]: { ...(prev[restaurant.id] || {}), date: new Date(e.target.value) }
+                        }))}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        title="Change Date"
+                      />
+                    </div>
 
-              noteSaveTimeouts.current[restaurant.id] = setTimeout(() => {
-                persistStateChanges(restaurant.id, { notes: value });
-                delete noteSaveTimeouts.current[restaurant.id];
-              }, 800);
-            }}
-            onBlur={() => {
-              const noteValue = draftNotes[restaurant.id] ?? state.notes ?? '';
-              if (noteSaveTimeouts.current[restaurant.id]) {
-                clearTimeout(noteSaveTimeouts.current[restaurant.id]);
-                delete noteSaveTimeouts.current[restaurant.id];
-              }
-              persistStateChanges(restaurant.id, { notes: noteValue });
-            }}
-            rows={3}
-            placeholder="Add your thoughts, meal ideas, or who you'd like to bring."
-            className="w-full rounded-lg border border-orange-200 px-3 py-2 focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-orange-500 text-white placeholder:text-orange-100"
-          />
+                    {/* Middle: Notes Input */}
+                    <div className="flex-1 min-w-0">
+                      <textarea
+                        value={currentDraft.notes || ''}
+                        onChange={(e) => setEditingJournalEntry(prev => ({
+                          ...prev,
+                          [restaurant.id]: { ...(prev[restaurant.id] || {}), notes: e.target.value }
+                        }))}
+                        placeholder="Write your notes here..."
+                        className="w-full text-sm text-gray-700 placeholder:text-gray-400 border-0 p-0 focus:ring-0 resize-none bg-transparent leading-relaxed h-[88px]"
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* Right: Rating & Photos */}
+                    <div className="flex-shrink-0 flex flex-col items-end gap-3 w-[140px]">
+                      {/* Rating Input */}
+                      <div className="flex text-gray-200 gap-0.5">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            onClick={() => setEditingJournalEntry(prev => ({
+                              ...prev,
+                              [restaurant.id]: { ...(prev[restaurant.id] || {}), rating: star }
+                            }))}
+                            className={`focus:outline-none transition-transform active:scale-90 ${(currentDraft.rating || 0) >= star ? 'text-yellow-400' : 'hover:text-yellow-200'
+                              }`}
+                          >
+                            <Star className={`w-3.5 h-3.5 ${(currentDraft.rating || 0) >= star ? 'fill-current' : ''}`} />
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Photos Input */}
+                      <div className="flex flex-wrap gap-1.5 justify-end">
+                        {currentDraft.photos?.map((photo, idx) => (
+                          <div key={idx} className="relative w-10 h-10 rounded-md overflow-hidden group border border-gray-100">
+                            <img src={photo} alt="Draft" className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => setEditingJournalEntry(prev => {
+                                const current = prev[restaurant.id];
+                                if (!current) return prev;
+                                return {
+                                  ...prev,
+                                  [restaurant.id]: {
+                                    ...current,
+                                    photos: current.photos?.filter((_, i) => i !== idx)
+                                  }
+                                };
+                              })}
+                              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                            >
+                              <X className="w-3 h-3 text-white" />
+                            </button>
+                          </div>
+                        ))}
+                        <label className={`flex items-center justify-center w-10 h-10 border border-dashed border-gray-300 rounded-md cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors ${journalUploadStates[restaurant.id] ? 'opacity-50 pointer-events-none' : ''}`}>
+                          {journalUploadStates[restaurant.id] ? <Loader2 className="w-4 h-4 animate-spin text-orange-500" /> : <Camera className="w-4 h-4 text-gray-400" />}
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => handleJournalImageUpload(restaurant.id, e)} />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer: Save/Cancel Actions */}
+                  <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100/50">
+                    <button
+                      onClick={() => handleCancelJournalEntry(restaurant.id)}
+                      className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleSaveJournalEntry(restaurant.id)}
+                      className="text-xs font-medium text-white bg-orange-500 hover:bg-orange-600 px-3 py-1 rounded-full shadow-sm transition-colors"
+                    >
+                      Save Entry
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Journal Entries List */}
+          <div className="space-y-3">
+            {state.journalEntries && state.journalEntries.length > 0 ? (
+              state.journalEntries.map((entry) => (
+                <div key={entry.id} className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm hover:shadow-md transition-all group">
+                  <div className="flex gap-4 items-start">
+                    {/* Left: Date */}
+                    <div className="flex-shrink-0 p-2 bg-orange-50 rounded-lg text-orange-600 font-bold text-center w-[52px] leading-tight">
+                      <span className="block text-[10px] uppercase text-orange-400">
+                        {safeDate(entry.date).toLocaleString('default', { month: 'short' })}
+                      </span>
+                      <span className="text-lg">
+                        {safeDate(entry.date).getDate()}
+                      </span>
+                    </div>
+
+                    {/* Middle: Content */}
+                    <div className="flex-1 min-w-0 py-0.5">
+                      {/* Header: Rating (Right aligned) */}
+                      {entry.rating && (
+                        <div className="flex justify-end mb-1">
+                          <div className="flex text-yellow-400 gap-0.5">
+                            {[...Array(5)].map((_, i) => (
+                              <Star key={i} className={`w-3.5 h-3.5 ${i < entry.rating! ? 'fill-current' : 'text-gray-200'}`} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Main Content Row: Notes (Left) | Photos (Right) */}
+                      <div className="flex gap-3 items-start">
+                        {/* Notes */}
+                        <div className="flex-1 min-w-0">
+                          {entry.notes ? (
+                            <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                              {entry.notes}
+                            </p>
+                          ) : (
+                            <span className="text-gray-400 text-sm italic">No notes</span>
+                          )}
+                        </div>
+
+                        {/* Photos */}
+                        {entry.photos && entry.photos.length > 0 && (
+                          <div className="flex-shrink-0 flex flex-wrap gap-2 max-w-[120px] justify-end">
+                            {entry.photos.map((photo, idx) => (
+                              <div key={idx} className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-100 cursor-pointer hover:opacity-90 active:scale-95 transition-all" onClick={() => setSelectedImage(photo)}>
+                                <img src={photo} alt={`Journal ${idx}`} className="w-full h-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex-shrink-0 pt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => handleDeleteJournalEntry(restaurant.id, entry.id)}
+                        className="text-gray-300 hover:text-red-500 p-1.5 rounded-full hover:bg-red-50 transition-colors"
+                        title="Delete Entry"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm text-gray-400">
+                  <Edit3 className="w-6 h-6" />
+                </div>
+                <p className="text-gray-500 font-medium">No journal entries yet</p>
+                <p className="text-gray-400 text-sm">Record your first visit experience!</p>
+              </div>
+            )}
+          </div>
+
+          {/* Legacy Notes Section (Only if exists and not converted) */}
+          {(state.notes || (state.userUploadedPhotos && state.userUploadedPhotos.length > 0)) && (
+            <div className="mt-8 pt-6 border-t border-orange-200/50">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Clock className="w-3 h-3" />
+                Historical Notes
+              </h4>
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 opacity-75 hover:opacity-100 transition-opacity">
+                {state.notes && <p className="text-sm text-gray-600 italic mb-3">"{state.notes}"</p>}
+                {state.userUploadedPhotos && state.userUploadedPhotos.length > 0 && (
+                  <div className="flex gap-2">
+                    {state.userUploadedPhotos.map((photo, idx) => (
+                      <img key={idx} src={photo} alt="Legacy" className="w-16 h-16 object-cover rounded-lg border border-gray-200" onClick={() => setSelectedImage(photo)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {!isAuthenticated && (
@@ -460,7 +794,7 @@ function RestaurantsPageContent() {
       console.log('[Restaurants] Waiting for user location...');
       return;
     }
-    
+
     console.log('[Restaurants] Loading restaurants for location:', userLocation);
     setLoading(true);
     try {
@@ -488,6 +822,38 @@ function RestaurantsPageContent() {
         <meta name="description" content="Browse all restaurants in Nexus Nosh" />
       </Head>
       <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white p-6 pb-24">
+        {/* Image Modal */}
+        <AnimatePresence>
+          {selectedImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+              onClick={() => setSelectedImage(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src={selectedImage}
+                  alt="Enlarged view"
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                />
+                <button
+                  onClick={() => setSelectedImage(null)}
+                  className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <header className="text-center mb-6">
@@ -496,72 +862,70 @@ function RestaurantsPageContent() {
           </header>
 
           <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-                className="rounded-full border border-orange-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300"
-              >
-                <option value="all">All</option>
-                <option value="wantToGo">I want to go</option>
-                <option value="hasBeen">I have been there</option>
-              </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+              className="rounded-full border border-orange-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300"
+            >
+              <option value="all">All</option>
+              <option value="wantToGo">I want to go</option>
+              <option value="hasBeen">I have been there</option>
+            </select>
 
-              <div className="flex items-center rounded-full border border-orange-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-300">
-                <label htmlFor="zip-filter" className="mr-2 text-gray-500">
-                  ZIP
-                </label>
-                <input
-                  id="zip-filter"
-                  type="text"
-                  value={zipFilter}
-                  onChange={(event) => setZipFilter(event.target.value)}
-                  placeholder="e.g. 84770"
-                  className="w-24 border-none bg-transparent p-0 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none"
-                />
-              </div>
+            <div className="flex items-center rounded-full border border-orange-200 bg-white px-3 py-2 text-sm text-gray-600 shadow-sm focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-300">
+              <label htmlFor="zip-filter" className="mr-2 text-gray-500">
+                ZIP
+              </label>
+              <input
+                id="zip-filter"
+                type="text"
+                value={zipFilter}
+                onChange={(event) => setZipFilter(event.target.value)}
+                placeholder="e.g. 84770"
+                className="w-24 border-none bg-transparent p-0 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none"
+              />
+            </div>
 
-              <button
-                type="button"
-                onClick={async () => {
-                  const nextValue = !isListView;
-                  setIsListView(nextValue);
+            <button
+              type="button"
+              onClick={async () => {
+                const nextValue = !isListView;
+                setIsListView(nextValue);
 
-                  if (user) {
-                    try {
-                      await updateViewPreferences(user.uid, {
-                        restaurantsListView: nextValue,
-                      });
-                    } catch (error) {
-                      console.error('Failed to save view preference:', error);
-                    }
+                if (user) {
+                  try {
+                    await updateViewPreferences(user.uid, {
+                      restaurantsListView: nextValue,
+                    });
+                  } catch (error) {
+                    console.error('Failed to save view preference:', error);
                   }
-                }}
-                className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-white px-4 py-2 text-sm font-medium text-orange-600 shadow-sm transition hover:border-orange-300 hover:bg-orange-50"
-                disabled={!preferencesLoaded}
-              >
-                {isListView ? (
-                  <>
-                    <Grid className="w-4 h-4" />
-                    Boxes view
-                  </>
-                ) : (
-                  <>
-                    <List className="w-4 h-4" />
-                    List view
-                  </>
-                )}
-                <span
-                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition ${
-                    isListView ? 'bg-orange-500' : 'bg-gray-300'
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-white px-4 py-2 text-sm font-medium text-orange-600 shadow-sm transition hover:border-orange-300 hover:bg-orange-50"
+              disabled={!preferencesLoaded}
+            >
+              {isListView ? (
+                <>
+                  <Grid className="w-4 h-4" />
+                  Boxes view
+                </>
+              ) : (
+                <>
+                  <List className="w-4 h-4" />
+                  List view
+                </>
+              )}
+              <span
+                className={`relative inline-flex h-5 w-10 items-center rounded-full transition ${isListView ? 'bg-orange-500' : 'bg-gray-300'
                   }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
-                      isListView ? 'translate-x-5' : 'translate-x-1'
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${isListView ? 'translate-x-5' : 'translate-x-1'
                     }`}
-                  />
-                </span>
-              </button>
+                />
+              </span>
+            </button>
           </div>
 
           {/* Map Section */}
@@ -571,8 +935,8 @@ function RestaurantsPageContent() {
                 <div className="flex items-center justify-between p-4 border-b border-gray-100">
                   <h3 className="font-semibold text-gray-800">Explore Restaurants</h3>
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => {
                         if (navigator.geolocation) {
@@ -597,7 +961,7 @@ function RestaurantsPageContent() {
                   </div>
                 </div>
                 <div className="relative h-[400px]">
-                  <MapView 
+                  <MapView
                     ref={mapRef}
                     restaurants={combinedRestaurants}
                     center={mapCenter}
@@ -686,55 +1050,55 @@ function RestaurantsPageContent() {
                     <tbody className="divide-y divide-orange-50">
                       {filteredRestaurants.map((restaurant) => (
                         <Fragment key={restaurant.id}>
-                        <tr className="hover:bg-orange-50 transition">
-                          <td className="px-4 py-3 text-sm font-medium text-gray-800">
-                            <div className="flex items-center gap-2">
+                          <tr className="hover:bg-orange-50 transition">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-800">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpanded(restaurant.id)}
+                                  className="text-left text-orange-600 hover:underline"
+                                >
+                                  {restaurant.name}
+                                </button>
+                                <AddToListButton restaurantId={restaurant.id} restaurant={restaurant} size="sm" />
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {restaurant.rating?.average !== undefined ? (
+                                <div className="flex items-center gap-1 text-yellow-500">
+                                  <Star className="w-4 h-4 fill-yellow-500" />
+                                  <span>{restaurant.rating.average.toFixed(1)}</span>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">N/A</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
                               <button
                                 type="button"
-                                onClick={() => toggleExpanded(restaurant.id)}
+                                onClick={() => openInMaps(restaurant.address)}
                                 className="text-left text-orange-600 hover:underline"
                               >
-                                {restaurant.name}
+                                {restaurant.address}
                               </button>
-                              <AddToListButton restaurantId={restaurant.id} restaurant={restaurant} size="sm" />
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-700">
-                            {restaurant.rating?.average !== undefined ? (
-                              <div className="flex items-center gap-1 text-yellow-500">
-                                <Star className="w-4 h-4 fill-yellow-500" />
-                                <span>{restaurant.rating.average.toFixed(1)}</span>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">N/A</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            <button
-                              type="button"
-                              onClick={() => openInMaps(restaurant.address)}
-                              className="text-left text-orange-600 hover:underline"
-                            >
-                              {restaurant.address}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {restaurant.cuisineType.slice(0, 3).join(', ') || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {restaurant.attributes?.quietness ?? 'N/A'}/100
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 capitalize">
-                            {restaurant.attributes?.atmosphere ?? 'N/A'}
-                          </td>
-                        </tr>
-                        {expandedRestaurants[restaurant.id] && (
-                          <tr className="bg-orange-50/50">
-                            <td colSpan={6} className="px-4 py-4">
-                              {renderDetails(restaurant)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {restaurant.cuisineType.slice(0, 3).join(', ') || '—'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {restaurant.attributes?.quietness ?? 'N/A'}/100
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 capitalize">
+                              {restaurant.attributes?.atmosphere ?? 'N/A'}
                             </td>
                           </tr>
-                        )}
+                          {expandedRestaurants[restaurant.id] && (
+                            <tr className="bg-orange-50/50">
+                              <td colSpan={6} className="px-4 py-4">
+                                {renderDetails(restaurant)}
+                              </td>
+                            </tr>
+                          )}
                         </Fragment>
                       ))}
                     </tbody>
@@ -764,7 +1128,7 @@ function RestaurantsPageContent() {
                               <AddToListButton restaurantId={restaurant.id} restaurant={restaurant} size="sm" />
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center text-gray-600 text-sm mb-3">
                             <MapPin className="w-4 h-4 mr-1" />
                             <button
